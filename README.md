@@ -1,7 +1,7 @@
 # PatchLeaks – From Patch to PoC  
 [![GNU AGPL v3 License](https://img.shields.io/badge/License-GNU%20AGPL%20v3-blue)](LICENSE)
-[![Issues](https://img.shields.io/github/issues/your-org/patchleaks)](https://github.com/your-org/patchleaks/issues)
-[![Stars](https://img.shields.io/github/stars/your-org/patchleaks?style=social)](https://github.com/your-org/patchleaks/stargazers)
+[![Issues](https://img.shields.io/github/issues/hatlesswizard/patchleaks)](https://github.com/hatlesswizard/patchleaks/issues)
+[![Stars](https://img.shields.io/github/stars/hatlesswizard/patchleaks?style=social)](https://github.com/hatlesswizard/patchleaks/stargazers)
 
 > **Go from a CVE number to the exact patched code and its vulnerability analysis**
 
