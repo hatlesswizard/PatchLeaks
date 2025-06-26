@@ -1,0 +1,1 @@
+{"service": "deepseek", "ollama": {"url": "http://localhost:11434", "model": "qwen2.5-coder:3b"}, "openai": {"key": "", "model": "gpt-4-turbo", "base_url": null}, "deepseek": {"key": "", "model": "deepseek-reasoner", "base_url": null}, "claude": {"key": "", "model": "claude-3-5-haiku-20241022", "base_url": null}, "parameters": {"temperature": 1.0, "num_ctx": 8192}}
