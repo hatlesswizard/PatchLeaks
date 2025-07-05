@@ -466,6 +466,7 @@
             <button class="filter-btn" data-filter="product">Product Analysis</button>
             <button class="filter-btn" data-filter="folder">Folder Analysis</button>
             <button class="filter-btn" data-filter="ai">AI Enabled</button>
+            <button type="button" class="btn btn-outline-info filter-btn" data-filter="cve">CVE Match</button>
         </div>
     </div>
 </div>
@@ -527,6 +528,16 @@
                     <i class="fas fa-bug"></i>
                     <span>{{ report.vuln_count }} Vulnerabilities</span>
                 </div>
+                {% if report.meta.params.cve_ids %}
+                <div class="stat-item">
+                    <i class="fas fa-bug text-danger"></i>
+                    <span>
+                        {% for cve in report.meta.params.cve_ids.split(',') %}
+                            <span class="badge bg-danger badge-glow me-1">{{ cve.strip() }}</span>
+                        {% endfor %}
+                    </span>
+                </div>
+                {% endif %}
                 {% if report.meta.params.extension %}
                 <div class="stat-item">
                     <i class="fas fa-filter"></i>
