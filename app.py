@@ -48,7 +48,7 @@ def get_ai_analysis(file_path, diff_content):
     prompt = f"Analyze the provided code diff for security fixes.\n\nInstructions:\n1. Your answer MUST strictly follow the answer format outlined below.\n2. Always include the vulnerability name if one exists.\n3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.\n4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.\n\nAnswer Format for Each Vulnerability:\n    Vulnerability Existed: [yes/no/not sure]\n    [Vulnerability Name] [File] [Lines]\n    [Old Code]\n    [Fixed Code]\n\nAdditional Details:\n    File: {file_path}\n    Diff Content:\n    {diff_content}"
     
     retry_count = 0
-    while True: #Unlimited retries, pay attention to this, otherwise you might be stuck in loop
+    while True:
         try:
             if config['service'] == 'ollama':
                 response = requests.post(
@@ -308,17 +308,17 @@ def save_diff(file_path, diff, output_file):
         f.writelines(diff)
         f.write("=" * 9 + "\n\n")
 
-def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=None):
-    open("diff.txt", "w").close()
-    open("special.txt", "w").close()
-    old_files = get_files(old_folder)
-    new_files = get_files(new_folder)
-    common_files = old_files & new_files
-    for file in common_files:
-        if ext_filter and not file.endswith(ext_filter):
-            continue
-        old_path = os.path.join(old_folder, file)
-        new_path = os.path.join(new_folder, file)
+def compare_single_file(file_info):
+    """Compare a single file between old and new folders"""
+    file, old_folder, new_folder, ext_filter, manual_keywords = file_info
+    
+    if ext_filter and not file.endswith(ext_filter):
+        return None
+    
+    old_path = os.path.join(old_folder, file)
+    new_path = os.path.join(new_folder, file)
+    
+    try:
         old_code = read_file(old_path)
         new_code = read_file(new_path)
         diff = list(difflib.unified_diff(
@@ -327,9 +327,11 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
             tofile=new_path,
             lineterm="\n"
         ))
+        
         if not diff:
-            continue
-        save_diff(file, diff, "diff.txt")
+            return None
+            
+        # Check if diff contains keywords
         save_special = False
         if manual_keywords:
             keywords = [k.strip() for k in manual_keywords if k.strip()]
@@ -339,8 +341,58 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
                     break
         else:
             save_special = True
-        if save_special:
-            save_diff(file, diff, "special.txt")
+            
+        return {
+            'file': file,
+            'diff': diff,
+            'save_special': save_special
+        }
+    except Exception as e:
+        print(f"Error comparing file {file}: {str(e)}")
+        return None
+
+def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=None):
+    """Multithreaded folder comparison"""
+    open("diff.txt", "w").close()
+    open("special.txt", "w").close()
+    
+    old_files = get_files(old_folder)
+    new_files = get_files(new_folder)
+    common_files = old_files & new_files
+    
+    # Prepare file comparison tasks
+    file_tasks = [
+        (file, old_folder, new_folder, ext_filter, manual_keywords)
+        for file in common_files
+    ]
+    
+    # Use ThreadPoolExecutor for parallel processing
+    max_workers = min(32, len(file_tasks))  # Cap at 32 threads to avoid overwhelming the system
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_file = {
+            executor.submit(compare_single_file, task): task[0]
+            for task in file_tasks
+        }
+        
+        # Collect results as they complete
+        for future in concurrent.futures.as_completed(future_to_file):
+            result = future.result()
+            if result:
+                # Thread-safe file writing
+                with open("diff.txt", "a", encoding="utf-8") as f:
+                    f.write(f"{result['file']}\n")
+                    f.write("=" * 8 + "\n")
+                    f.writelines(result['diff'])
+                    f.write("=" * 9 + "\n\n")
+                
+                if result['save_special']:
+                    with open("special.txt", "a", encoding="utf-8") as f:
+                        f.write(f"{result['file']}\n")
+                        f.write("=" * 8 + "\n")
+                        f.writelines(result['diff'])
+                        f.write("=" * 9 + "\n\n")
 
 def parse_diff_file(diff_path):
     diffs = []
