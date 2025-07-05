@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PatchLeaks - Security Analysis Suite</title>
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
+    
     <style>
         :root {
             --primary-blue: #4169E1;
@@ -744,6 +746,708 @@
             color: #fff;
             border-color: rgba(255,255,255,0.3);
         }
+
+        /* Sticky Folder Analysis Styles */
+        .sticky-folder-analysis {
+            position: relative;
+            z-index: 10;
+        }
+
+        .sticky-container {
+            position: sticky;
+            top: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            overflow: visible;
+            padding-bottom: 2rem;
+        }
+
+        .sticky-folder-analysis {
+            background: transparent;
+        }
+
+        .sticky-content {
+            width: 100%;
+            max-width: 1400px;
+            padding: 2rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .sticky-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            position: relative;
+            z-index: 2;
+        }
+
+        .sticky-title {
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-weight: 800;
+            background: linear-gradient(90deg, #fff, var(--primary-blue), var(--accent-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .sticky-subtitle {
+            font-size: 1.2rem;
+            color: rgba(255,255,255,0.7);
+            margin: 0;
+            font-weight: 300;
+        }
+
+        .code-transformation-container {
+            background: rgba(18, 21, 32, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2rem;
+            background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .code-tabs {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .code-tab {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.7);
+            font-size: 0.9rem;
+            font-weight: 500;
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .vulnerable-tab {
+            border: 1px solid rgba(231, 76, 60, 0.3);
+        }
+
+        .fixed-tab {
+            border: 1px solid rgba(0, 184, 148, 0.3);
+        }
+
+        .tab-indicator {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .vulnerable-indicator {
+            background: var(--danger-color);
+            box-shadow: 0 0 10px rgba(231, 76, 60, 0.6);
+        }
+
+        .fixed-indicator {
+            background: var(--success-color);
+            box-shadow: 0 0 10px rgba(0, 184, 148, 0.6);
+            opacity: 0;
+            transform: scale(0);
+        }
+
+        .code-status {
+            display: flex;
+            align-items: center;
+        }
+
+        .status-badge {
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--danger-color), #c0392b);
+            color: white;
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        .code-display {
+            position: relative;
+            height: 650px;
+            overflow: hidden;
+        }
+
+        .code-editor {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .code-content {
+            padding: 2rem;
+            height: 100%;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .code-content pre {
+            margin: 0;
+            background: transparent;
+            border: none;
+            padding: 0;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .code-content code {
+            background: transparent;
+            padding: 0;
+        }
+
+        .code-line {
+            display: block;
+            padding: 0.05rem 0;
+            position: relative;
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 4px;
+            margin: 0.05rem 0;
+            white-space: pre;
+        }
+
+        /* Handle syntax highlighting interference */
+        .code-content pre code .hljs {
+            background: transparent !important;
+            padding: 0 !important;
+        }
+
+        .code-content pre code .hljs * {
+            white-space: pre !important;
+            display: inline !important;
+        }
+
+        .code-content pre code .hljs .code-line {
+            display: block !important;
+            white-space: pre !important;
+        }
+
+        .code-line.spacer {
+            color: rgba(255,255,255,0.4);
+            font-weight: bold;
+            text-align: center;
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+
+        /* Initial state - all lines visible */
+        .add-line {
+            opacity: 0;
+            transform: translateX(20px) scale(0.98);
+            background: rgba(0, 184, 148, 0.1);
+            border-left: 3px solid var(--success-color);
+            padding-left: 1rem;
+            margin-left: -1rem;
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .code-diff-container {
+            position: relative;
+            transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .transforming-block {
+            background: rgba(231, 76, 60, 0.1);
+            border-left: 3px solid var(--danger-color);
+            padding-left: 1rem;
+            margin-left: -1rem;
+            position: relative;
+            transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+            min-height: 2rem;
+        }
+
+        .transforming-block.expanding {
+            background: rgba(0, 184, 148, 0.1);
+            border-left-color: var(--success-color);
+            min-height: 10rem;
+            padding: 0.5rem 0 0.5rem 1rem;
+            margin: 0.5rem 0 0.5rem -1rem;
+        }
+
+        /* Diff-style indicators */
+        .line-removed {
+            background: rgba(231, 76, 60, 0.15);
+            color: #ff6b6b;
+            text-decoration: line-through;
+            opacity: 0.7;
+            transition: all 0.6s ease;
+        }
+
+        .line-added {
+            background: rgba(0, 184, 148, 0.15);
+            color: #51cf66;
+            transform: translateX(10px);
+            transition: all 0.6s ease;
+        }
+
+        .line-modified {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 3px solid #ffc107;
+            transition: all 0.8s ease;
+        }
+
+        /* Animation states */
+        .add-line.active {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+        }
+
+        /* Character-by-character transformation styles */
+        .char-old {
+            opacity: 1;
+            color: #ff6b6b;
+            transition: all 0.3s ease;
+        }
+
+        .char-new {
+            opacity: 0;
+            color: #51cf66;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+
+        .char-old.fading {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+
+        .char-new.appearing {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .typing-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: var(--primary-blue);
+            animation: blink 1s infinite;
+            margin-left: 1px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .code-annotations {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 80px;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .annotation {
+            position: absolute;
+            right: 20px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            pointer-events: all;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .annotation-indicator {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: white;
+            position: relative;
+            z-index: 2;
+        }
+
+        .vuln-annotation .annotation-indicator {
+            background: var(--danger-color);
+            animation: vulnPulse 2s infinite;
+            box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+        }
+
+        .secure-annotation .annotation-indicator {
+            background: var(--success-color);
+            opacity: 0;
+            transform: scale(0);
+            animation: none;
+        }
+
+        .secure-annotation.active .annotation-indicator {
+            opacity: 1;
+            transform: scale(1);
+            animation: securePulse 2s infinite;
+            box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.7);
+        }
+
+        .annotation-tooltip {
+            position: absolute;
+            right: 25px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0,0,0,0.95);
+            color: white;
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            z-index: 20;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            min-width: 180px;
+        }
+
+        .annotation:hover .annotation-tooltip {
+            opacity: 1;
+            transform: translateY(-50%) translateX(-5px);
+        }
+
+        /* Position annotations based on line numbers */
+        .annotation[data-target="4"] { top: calc(3 * 2.1rem + 2rem); }
+        .annotation[data-target="8"] { top: calc(7 * 2.1rem + 2rem); }
+        .annotation[data-target="15"] { top: calc(14 * 2.1rem + 2rem); }
+        .annotation[data-target="18"] { top: calc(20 * 2.1rem + 2rem); }
+
+        @keyframes vulnPulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+            }
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 8px rgba(231, 76, 60, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+            }
+        }
+
+        @keyframes securePulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.7);
+            }
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 8px rgba(0, 184, 148, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 184, 148, 0);
+            }
+        }
+
+        @keyframes vulnLinePulse {
+            0% { 
+                background: rgba(231, 76, 60, 0.1);
+                border-left-color: var(--danger-color);
+            }
+            50% { 
+                background: rgba(231, 76, 60, 0.2);
+                border-left-color: #ff6b6b;
+                transform: translateX(-5px);
+            }
+            100% { 
+                background: rgba(231, 76, 60, 0.05);
+                border-left-color: rgba(231, 76, 60, 0.3);
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+            }
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+            }
+        }
+
+        @keyframes securityPulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.7);
+            }
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(0, 184, 148, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 184, 148, 0);
+            }
+        }
+
+        .vuln-tooltip,
+        .security-tooltip {
+            position: absolute;
+            right: 25px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+
+        .vuln-indicator:hover .vuln-tooltip,
+        .security-indicator:hover .security-tooltip {
+            opacity: 1;
+        }
+
+        .transformation-progress {
+            padding: 2rem;
+            background: rgba(255,255,255,0.02);
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .progress-track {
+            position: relative;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--danger-color), var(--primary-blue), var(--success-color));
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .progress-knob {
+            position: absolute;
+            top: 50%;
+            left: 0%;
+            transform: translate(-50%, -50%);
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8rem;
+            box-shadow: 0 4px 12px rgba(65,105,225,0.4);
+            transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .progress-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .analysis-summary {
+            padding: 2rem;
+            background: rgba(255,255,255,0.02);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.5rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .summary-item:hover {
+            background: rgba(255,255,255,0.08);
+            transform: translateY(-2px);
+        }
+
+        .summary-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .summary-content h4 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .summary-content p {
+            margin: 0;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.7);
+            line-height: 1.4;
+        }
+
+        .scroll-spacer {
+            height: 80vh;
+            pointer-events: none;
+        }
+
+        /* Transition States */
+        .transformation-active .fixed-indicator {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .transformation-active .vulnerable-indicator {
+            opacity: 0.3;
+            transform: scale(0.8);
+        }
+
+        .transformation-active .status-badge {
+            background: linear-gradient(135deg, var(--success-color), #20bf6b);
+            box-shadow: 0 4px 15px rgba(0, 184, 148, 0.3);
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .sticky-content {
+                padding: 1rem;
+            }
+
+            .sticky-title {
+                font-size: 2rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .sticky-subtitle {
+                font-size: 1rem;
+            }
+
+            .code-header {
+                flex-direction: column;
+                gap: 1rem;
+                padding: 1rem;
+            }
+
+            .code-tabs {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            .code-tab {
+                justify-content: center;
+            }
+
+            .code-display {
+                height: 400px;
+            }
+
+            .code-content {
+                padding: 1rem;
+                font-size: 0.75rem;
+                line-height: 1.6;
+            }
+
+            .code-line {
+                margin: 0.05rem 0;
+                padding: 0.05rem 0;
+            }
+
+            .add-line, .transforming-block, .line-added, .line-removed, .line-modified {
+                padding-left: 0.5rem;
+                margin-left: -0.5rem;
+                border-left-width: 2px;
+                font-size: 0.7rem;
+            }
+
+            .transforming-block.expanding {
+                min-height: 6rem;
+                font-size: 0.65rem;
+            }
+
+            .typing-cursor {
+                height: 0.9em;
+                width: 1px;
+            }
+
+            .code-diff-container {
+                font-size: 0.75rem;
+                line-height: 1.4;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-item {
+                padding: 1rem;
+            }
+
+            .code-annotations {
+                display: none;
+            }
+
+            .annotation-tooltip {
+                font-size: 0.7rem;
+                padding: 0.4rem 0.8rem;
+                min-width: 150px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -830,6 +1534,134 @@
         </div>
     </section>
 
+    <section class="sticky-folder-analysis" id="sticky-folder-analysis">
+        <div class="sticky-container">
+            <div class="sticky-content">
+                <div class="sticky-header">
+                    <h2 class="sticky-title">
+                        <i class="fas fa-folder-open me-3"></i>
+                        Watch Security Patch in Action
+                    </h2>
+                </div>
+                
+                <div class="code-transformation-container">
+                    <div class="code-header">
+                        <div class="code-tabs">
+                            <div class="code-tab vulnerable-tab">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>Vulnerable Code</span>
+                                <span class="tab-indicator vulnerable-indicator"></span>
+                            </div>
+                            <div class="code-tab fixed-tab">
+                                <i class="fas fa-shield-check"></i>
+                                <span>Patched Code</span>
+                                <span class="tab-indicator fixed-indicator"></span>
+                            </div>
+                        </div>
+                        <div class="code-status">
+                            <span class="status-badge" id="transformStatus">CVE-2024-47048 Detected</span>
+                        </div>
+                    </div>
+                    
+                    <div class="code-display">
+                        <div class="code-editor">
+                            <div class="code-content">
+                                <div class="code-diff-container" id="codeDiffContainer">
+                                    <pre><code class="hljs language-typescript" id="liveCode"></code></pre>
+                                </div>
+                            </div>
+                            <div class="code-annotations">
+                                <div class="annotation vuln-annotation" data-target="15">
+                                    <div class="annotation-indicator">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                    </div>
+                                    <div class="annotation-tooltip">
+                                        <strong>CVE-2024-47048</strong><br>
+                                        XSS via dangerouslySetInnerHTML
+                                    </div>
+                                </div>
+                                <div class="annotation secure-annotation" data-target="4">
+                                    <div class="annotation-indicator">
+                                        <i class="fas fa-shield-check"></i>
+                                    </div>
+                                    <div class="annotation-tooltip">
+                                        <strong>Security Fix</strong><br>
+                                        DOMPurify import added
+                                    </div>
+                                </div>
+                                <div class="annotation secure-annotation" data-target="8">
+                                    <div class="annotation-indicator">
+                                        <i class="fas fa-shield-check"></i>
+                                    </div>
+                                    <div class="annotation-tooltip">
+                                        <strong>Security Fix</strong><br>
+                                        Purify options imported
+                                    </div>
+                                </div>
+                                <div class="annotation secure-annotation" data-target="18">
+                                    <div class="annotation-indicator">
+                                        <i class="fas fa-shield-check"></i>
+                                    </div>
+                                    <div class="annotation-tooltip">
+                                        <strong>Security Fix</strong><br>
+                                        Content sanitization applied
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="transformation-progress">
+                        <div class="progress-track">
+                            <div class="progress-fill" id="progressFill"></div>
+                            <div class="progress-knob" id="progressKnob">
+                                <i class="fas fa-shield-alt"></i>
+                            </div>
+                        </div>
+                        <div class="progress-labels">
+                            <span class="progress-label-start">Vulnerable</span>
+                            <span class="progress-label-end">Secured</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="analysis-summary">
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <div class="summary-icon">
+                                <i class="fas fa-bug"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4>CVE-2024-47048</h4>
+                                <p>Rocket.Chat 6.12.0 and earlier allows stored XSS in the description and release notes of the marketplace and private apps.</p>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-icon">
+                                <i class="fas fa-shield-alt"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4>Security Patch</h4>
+                                <p>Added DOMPurify sanitization to prevent XSS attacks</p>
+                            </div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-icon">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <div class="summary-content">
+                                <h4>Impact Analysis</h4>
+                                <p>XSS vulnerability completely mitigated with DOMPurify</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="scroll-spacer"></div>
+    </section>
+
     <section class="scroll-section" id="folder-analysis">
         <div class="section-bg-accent right parallax-element" data-parallax-speed="0.08"></div>
         <div class="container">
@@ -860,7 +1692,7 @@
          $fileExist = false;
      }</code></pre>
                     <div class="mt-3 text-muted">
-                        <small><i class="fas fa-exclamation-triangle text-danger me-1"></i> Identified CVE-2025-24406: Path traversal vulnerability</small>
+                        <small><i class="fas fa-exclamation-triangle text-danger me-1"></i> Identified CVE-2024-47048: Rocket.Chat 6.12.0 and earlier allows stored XSS in the description and release notes of the marketplace and private apps.</small>
                     </div>
                 </div>
                 <div class="ui-mockup flex-grow-1" data-animation="fade-in" data-delay="500">
@@ -1271,6 +2103,238 @@ def add_product():
                 });
             });
         }
+
+        function animateCodeLines(progress, easedProgress) {
+            const phases = {
+                imports: { start: 0.10, end: 0.25 },
+                transform: { start: 0.0, end: 0.80 },
+                complete: { start: 0.80, end: 0.90 }
+            };
+            
+            const getPhaseProgress = (phase) => {
+                if (progress < phase.start) return 0;
+                if (progress > phase.end) return 1;
+                return (progress - phase.start) / (phase.end - phase.start);
+            };
+            
+            const transformProgress = getPhaseProgress(phases.transform);
+            
+            const codeContainer = document.getElementById('codeDiffContainer');
+            if (codeContainer && codeContainer.querySelector('code').innerHTML.trim() === '') {
+                initializeCodeDisplay();
+            }
+            
+            const dangerousBlock = document.getElementById('dangerous-block');
+            if (dangerousBlock || codeContainer) {
+                transformDangerousLineContent(dangerousBlock, transformProgress);
+            }
+            
+            const completeProgress = getPhaseProgress(phases.complete);
+            if (completeProgress > 0) {
+                const securityAnnotations = document.querySelectorAll('[data-target="4"], [data-target="8"], [data-target="18"]');
+                securityAnnotations.forEach(annotation => annotation.classList.add('active'));
+                
+                const progressKnob = document.getElementById('progressKnob');
+                if (progressKnob) {
+                    progressKnob.style.transform = `translate(-50%, -50%) rotate(${progress * 360}deg) scale(${1 + (completeProgress * 0.1)})`;
+                    if (completeProgress > 0.5) {
+                        progressKnob.style.boxShadow = `0 0 ${15 * completeProgress}px rgba(65,105,225,0.6)`;
+                    }
+                }
+            }
+        }
+        
+        function transformDangerousLineContent(element, progress) {
+            const codeContainer = document.getElementById('codeDiffContainer');
+            if (!codeContainer) return;
+            
+            const originalCode = {
+                imports: [
+                    'import &#123; ExternalLink &#125; from \'@rocket.chat/ui-client\';',
+                    'import type &#123; TranslationKey &#125; from \'@rocket.chat/ui-contexts\';',
+                    'import &#123; useTranslation &#125; from \'@rocket.chat/ui-contexts\';',
+                    'import React from \'react\';',
+                    'import ScreenshotCarouselAnchor from \'../../../components/ScreenshotCarouselAnchor\';',
+                    'import type &#123; AppInfo &#125; from \'../../../definitions/AppInfo\';',
+                    'import AppDetailsAPIs from \'./AppDetailsAPIs\';',
+                    'import &#123; normalizeUrl &#125; from \'./normalizeUrl\';'
+                ],
+                vuln_line: '                    &lt;Box dangerouslySetInnerHTML=&#123;&#123; __html: isMarkdown ? detailedDescription.rendered : description &#125;&#125; withRichContent /&gt;'
+            };
+
+            const patchedCode = {
+                secure_lines: [
+                    '                    &lt;Box',
+                    '                        dangerouslySetInnerHTML=&#123;&#123;',
+                    '                            __html: isMarkdown',
+                    '                                ? DOMPurify.sanitize(detailedDescription.rendered, purifyOptions)',
+                    '                                : DOMPurify.sanitize(description, purifyOptions),',
+                    '                        &#125;&#125;',
+                    '                        withRichContent',
+                    '                    /&gt;'
+                ]
+            };
+            
+            let content = '';
+            const importLines = [];
+            
+            importLines.push(`<span class="code-line" data-line="1">${originalCode.imports[0]}</span>`);
+            importLines.push(`<span class="code-line" data-line="2">${originalCode.imports[1]}</span>`);
+            importLines.push(`<span class="code-line" data-line="3">${originalCode.imports[2]}</span>`);
+            
+            if (progress > 0.2) {
+                const domPurifyOpacity = Math.min(1, (progress - 0.2) / 0.15);
+                importLines.push(`<span class="code-line add-line" data-line="4" style="opacity: ${domPurifyOpacity}; transform: translateX(${20 * (1 - domPurifyOpacity)}px); background: rgba(0, 184, 148, ${domPurifyOpacity * 0.15});">import DOMPurify from 'dompurify';</span>`);
+            }
+            
+            importLines.push(`<span class="code-line" data-line="5">${originalCode.imports[3]}</span>`);
+            importLines.push(`<span class="code-line" data-line="6">${originalCode.imports[4]}</span>`);
+            importLines.push(`<span class="code-line" data-line="7">${originalCode.imports[5]}</span>`);
+            
+            if (progress > 0.35) {
+                const purifyOpacity = Math.min(1, (progress - 0.35) / 0.15);
+                importLines.push(`<span class="code-line add-line" data-line="8" style="opacity: ${purifyOpacity}; transform: translateX(${20 * (1 - purifyOpacity)}px); background: rgba(0, 184, 148, ${purifyOpacity * 0.15});">import &#123; purifyOptions &#125; from '../../../lib/purifyOptions';</span>`);
+            }
+            
+            importLines.push(`<span class="code-line" data-line="9">${originalCode.imports[6]}</span>`);
+            importLines.push(`<span class="code-line" data-line="10">${originalCode.imports[7]}</span>`);
+            
+            content = importLines.join('');
+            
+            content += `<span class="code-line spacer" data-line="11">...</span>`;
+            content += `<span class="code-line" data-line="12">                    &lt;Box fontScale='h4' mbe=&#123;8&#125; color='titles-labels'&gt;</span>`;
+            content += `<span class="code-line" data-line="13">                        &#123;t('Description')&#125;</span>`;
+            content += `<span class="code-line" data-line="14">                    &lt;/Box&gt;</span>`;
+            
+            if (progress < 0.5) {
+                content += `<span class="code-line transforming-block" data-line="15" style="background: rgba(231, 76, 60, 0.1); border-left: 3px solid var(--danger-color);">${originalCode.vuln_line}</span>`;
+            } else if (progress < 0.6) {
+                const removeProgress = (progress - 0.5) / 0.1;
+                content += `<span class="code-line line-removed" data-line="15" style="opacity: ${1 - removeProgress * 0.5}; text-decoration: line-through; background: rgba(231, 76, 60, ${0.15 - removeProgress * 0.1});">${originalCode.vuln_line}</span>`;
+            } else {
+                const transformProgress = (progress - 0.6) / 0.4;
+                const totalLines = patchedCode.secure_lines.length;
+                const visibleLines = Math.min(totalLines, Math.floor(transformProgress * totalLines) + 1);
+                
+                for (let i = 0; i < visibleLines; i++) {
+                    const lineProgress = Math.max(0, Math.min(1, (transformProgress * totalLines) - i));
+                    const isTyping = i === visibleLines - 1 && lineProgress < 1;
+                    
+                    content += `<span class="code-line line-added" data-line="${15 + i}" style="opacity: ${lineProgress}; background: rgba(0, 184, 148, ${lineProgress * 0.15}); border-left: 3px solid rgba(0, 184, 148, ${lineProgress}); transform: translateX(${10 * (1 - lineProgress)}px);">${patchedCode.secure_lines[i]}${isTyping ? '<span class="typing-cursor"></span>' : ''}</span>`;
+                }
+            }
+            
+            content += `<span class="code-line" data-line="23">                &lt;/Box&gt;</span>`;
+            content += `<span class="code-line" data-line="24">                &lt;Box is='section'&gt;</span>`;
+            
+            codeContainer.querySelector('code').innerHTML = content;
+        }
+
+        function initializeCodeDisplay() {
+            const dangerousBlock = document.getElementById('dangerous-block');
+            if (dangerousBlock) {
+                transformDangerousLineContent(dangerousBlock, 0);
+            }
+        }
+
+        function initStickyFolderAnalysis() {
+            const stickySection = document.querySelector('.sticky-folder-analysis');
+            const stickyContainer = document.querySelector('.sticky-container');
+            const scrollSpacer = document.querySelector('.scroll-spacer');
+            const progressFill = document.getElementById('progressFill');
+            const progressKnob = document.getElementById('progressKnob');
+            const transformStatus = document.getElementById('transformStatus');
+            
+            if (!stickySection || !stickyContainer || !scrollSpacer) return;
+            
+            let isTransformationActive = false;
+            let animationFrame = null;
+            
+            function updateTransformation() {
+                const stickyRect = stickySection.getBoundingClientRect();
+                const spacerRect = scrollSpacer.getBoundingClientRect();
+                const viewportHeight = window.innerHeight;
+                
+                const spacerTop = spacerRect.top;
+                const spacerHeight = spacerRect.height;
+                const progress = Math.max(0, Math.min(1, (viewportHeight - spacerTop) / spacerHeight));
+                
+                const easeInOutCubic = (t) => {
+                    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+                };
+                
+                const easedProgress = easeInOutCubic(progress);
+                
+                progressFill.style.width = `${progress * 100}%`;
+                progressKnob.style.left = `${progress * 100}%`;
+                
+                const shouldTransform = progress > 0.3;
+                
+                if (shouldTransform !== isTransformationActive) {
+                    isTransformationActive = shouldTransform;
+                    
+                    if (shouldTransform) {
+                        stickyContainer.classList.add('transformation-active');
+                        transformStatus.textContent = 'Vulnerability Patched ✓';
+                        
+                        if (navigator.vibrate) {
+                            navigator.vibrate(50);
+                        }
+                        
+                        setTimeout(() => {
+                            const vulnerableTab = document.querySelector('.vulnerable-tab');
+                            const fixedTab = document.querySelector('.fixed-tab');
+                            
+                            if (vulnerableTab && fixedTab) {
+                                vulnerableTab.style.opacity = '0.5';
+                                fixedTab.style.opacity = '1';
+                                fixedTab.style.borderColor = 'rgba(0, 184, 148, 0.6)';
+                            }
+                        }, 600);
+                        
+                    } else {
+                        stickyContainer.classList.remove('transformation-active');
+                        transformStatus.textContent = 'CVE-2024-47048 Detected';
+                        
+                        const vulnerableTab = document.querySelector('.vulnerable-tab');
+                        const fixedTab = document.querySelector('.fixed-tab');
+                        
+                        if (vulnerableTab && fixedTab) {
+                            vulnerableTab.style.opacity = '1';
+                            fixedTab.style.opacity = '0.7';
+                            fixedTab.style.borderColor = 'rgba(0, 184, 148, 0.3)';
+                        }
+                    }
+                }
+                
+                animateCodeLines(progress, easedProgress);
+                
+                animationFrame = null;
+            }
+            
+            function handleScroll() {
+                if (!animationFrame) {
+                    animationFrame = requestAnimationFrame(updateTransformation);
+                }
+            }
+            
+            window.addEventListener('scroll', handleScroll, { passive: true });
+            
+            updateTransformation();
+            
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(updateTransformation, 100);
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeCodeDisplay();
+            setTimeout(initStickyFolderAnalysis, 100);
+        });
+        
+
     </script>
 </body>
 </html>
