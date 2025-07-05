@@ -709,7 +709,6 @@ pre {
                 <p class="lead text-muted">Compare security patches between product versions</p>
             </div>
         </div>
-
         <div class="card shadow">
             <div class="card-body p-4">
                 {% if error %}
@@ -719,6 +718,11 @@ pre {
                 {% endif %}
 
                 <form method="post" class="mb-4">
+                    <div class="mb-3 d-flex justify-content-start">
+                        <a href="/manage-products" class="btn btn-outline-primary">
+                            <i class="fas fa-cogs me-2"></i>Manage Products
+                        </a>
+                    </div>
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Select Product</label>
@@ -738,7 +742,7 @@ pre {
                             </div>
                         </div>
                         
-                        <div class="col-md-3 version-group" style="display: {% if product == 'magento' %}block{% else %}none{% endif %};">
+                        <div class="col-md-3 version-group" style="display: {% if product or request.form.product %}block{% else %}none{% endif %};">
                             <label class="form-label">Old Version</label>
                             <div class="input-group">
                                 <span class="input-group-text">
@@ -746,13 +750,13 @@ pre {
                                 </span>
                                 <select class="form-select" name="old_version" id="oldVersion">
                                     {% for ver in magento_versions %}
-                                    <option value="{{ ver }}">{{ ver }}</option>
+                                    <option value="{{ ver }}" {% if ver == old_version %}selected{% endif %}>{{ ver }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                         </div>
                         
-                        <div class="col-md-3 version-group" style="display: {% if product == 'magento' %}block{% else %}none{% endif %};">
+                        <div class="col-md-3 version-group" style="display: {% if product or request.form.product %}block{% else %}none{% endif %};">
                             <label class="form-label">New Version</label>
                             <div class="input-group">
                                 <span class="input-group-text">
@@ -760,7 +764,7 @@ pre {
                                 </span>
                                 <select class="form-select" name="new_version" id="newVersion">
                                     {% for ver in magento_versions %}
-                                    <option value="{{ ver }}">{{ ver }}</option>
+                                    <option value="{{ ver }}" {% if ver == new_version %}selected{% endif %}>{{ ver }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -845,6 +849,15 @@ pre {
                                     <span class="vuln-status-badge badge ms-2 {% if result.vuln_severity == 'yes' %}bg-danger{% elif result.vuln_severity == 'no' %}bg-success{% else %}bg-warning{% endif %}">
                                         {{ result.vulnerability_status }}
                                     </span>
+                                    {% endif %}
+                                    {% if result.cve_matches %}
+                                        {% for cve_id, cve_data in result.cve_matches.items() %}
+                                            {% if cve_data.result == 'Yes' %}
+                                            <span class="badge bg-danger badge-glow ms-2">
+                                                {{ cve_id }}
+                                            </span>
+                                            {% endif %}
+                                        {% endfor %}
                                     {% endif %}
                                 </div>
                                 <i class="fas fa-chevron-down chevron"></i>
@@ -1016,6 +1029,19 @@ pre {
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
     $(document).ready(function() {
+        // Initialize version dropdowns if product is already selected
+        const selectedProduct = $('#productSelect').val();
+        if(selectedProduct) {
+            $('.version-group').show();
+            if(selectedProduct === 'magento') {
+                refreshMagentoVersions();
+            } else {
+                $.get(`/get_versions/${selectedProduct}`, function(versions) {
+                    populateVersionDropdowns(versions);
+                });
+            }
+        }
+
         $('#productSelect').change(function() {
             const product = $(this).val();
             if(product === 'magento') {
@@ -1024,22 +1050,31 @@ pre {
             } else if(product) {
                 $('.version-group').show();
                 $.get(`/get_versions/${product}`, function(versions) {
-                    $('#oldVersion, #newVersion').html(
-                        versions.map(v => `<option value="${v}">${v}</option>`)
-                    ).prop('disabled', false);
+                    populateVersionDropdowns(versions);
                 });
             } else {
                 $('.version-group').hide();
             }
         });
 
+        function populateVersionDropdowns(versions) {
+            const oldVersion = "{{ old_version }}";
+            const newVersion = "{{ new_version }}";
+            
+            $('#oldVersion, #newVersion').html(
+                versions.map(v => `<option value="${v}" ${v === oldVersion ? 'selected' : ''}>${v}</option>`)
+            ).prop('disabled', false);
+            
+            $('#newVersion').html(
+                versions.map(v => `<option value="${v}" ${v === newVersion ? 'selected' : ''}>${v}</option>`)
+            );
+        }
+
         function refreshMagentoVersions() {
             fetch('/get_versions/magento')
                 .then(response => response.json())
                 .then(versions => {
-                    $('#oldVersion, #newVersion').html(
-                        versions.map(v => `<option value="${v}">${v}</option>`)
-                    ).prop('disabled', false);
+                    populateVersionDropdowns(versions);
                 });
         }
 
