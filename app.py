@@ -36,8 +36,15 @@ def load_ai_config():
     try:
         with open(AI_CONFIG_FILE, 'r') as f:
             config = json.load(f)
+            # Merge with defaults to ensure all fields exist
             for service in ['openai', 'deepseek', 'claude']:
-                config[service]['base_url'] = default[service]['base_url']
+                if service not in config:
+                    config[service] = default[service]
+                else:
+                    # Preserve existing values, only add missing ones
+                    for key, value in default[service].items():
+                        if key not in config[service] or config[service][key] is None:
+                            config[service][key] = value
             return config
     except:
         return default
