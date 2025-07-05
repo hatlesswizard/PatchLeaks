@@ -593,6 +593,16 @@
                                         <input type="text" name="openai_model" class="form-control" value="{{ config.openai.model }}">
                                     </div>
                                 </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">Base URL (Optional)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-link text-primary"></i>
+                                        </span>
+                                        <input type="url" name="openai_url" class="form-control" value="{{ config.openai.base_url }}" placeholder="https://api.openai.com/v1">
+                                    </div>
+                                    <small class="text-muted">Leave empty to use default OpenAI API endpoint</small>
+                                </div>
                             </div>
                         </div>
 
@@ -617,6 +627,16 @@
                                         <input type="text" name="deepseek_model" class="form-control" value="{{ config.deepseek.model }}">
                                     </div>
                                 </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">Base URL (Optional)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-link text-primary"></i>
+                                        </span>
+                                        <input type="url" name="deepseek_url" class="form-control" value="{{ config.deepseek.base_url }}" placeholder="https://api.deepseek.com/v1">
+                                    </div>
+                                    <small class="text-muted">Leave empty to use default DeepSeek API endpoint</small>
+                                </div>
                             </div>
                         </div>
 
@@ -640,6 +660,16 @@
                                         </span>
                                         <input type="text" name="claude_model" class="form-control" value="{{ config.claude.model }}">
                                     </div>
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">Base URL (Optional)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-link text-primary"></i>
+                                        </span>
+                                        <input type="url" name="claude_url" class="form-control" value="{{ config.claude.base_url }}" placeholder="https://api.anthropic.com/v1">
+                                    </div>
+                                    <small class="text-muted">Leave empty to use default Claude API endpoint</small>
                                 </div>
                             </div>
                         </div>
