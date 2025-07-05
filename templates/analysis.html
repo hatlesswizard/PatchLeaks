@@ -683,6 +683,15 @@
                                         {{ result.vulnerability_status }}
                                     </span>
                                     {% endif %}
+                                    {% if result.cve_matches %}
+                                        {% for cve_id, cve_data in result.cve_matches.items() %}
+                                            {% if cve_data.result == 'Yes' %}
+                                            <span class="badge bg-danger badge-glow ms-2">
+                                                {{ cve_id }}
+                                            </span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% endif %}
                                 </div>
                                 <i class="fas fa-chevron-down chevron"></i>
                             </div>
