@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PatchLeaks - Manage Products</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/fontawesome.min.css" rel="stylesheet">
     <style>
         :root {
             --primary-blue: #4169E1;
@@ -361,18 +361,11 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/folder">Folder Analysis</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/products">Product Analysis</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/ai-settings">AI Analysis</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/reports">Reports</a>
-                    </li>
+                    <li class="nav-item"><a class="nav-link" href="/folder">Folder Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/products">Product Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/library">Library</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/ai-settings">AI Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/reports">Reports</a></li>
                 </ul>
             </div>
         </div>
@@ -571,7 +564,7 @@
         </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('scroll', () => {
