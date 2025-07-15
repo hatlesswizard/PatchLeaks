@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PatchLeaks - Security Analysis Suite</title>
     
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/fontawesome.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/github-dark.min.css">
     
     <style>
         :root {
@@ -33,8 +33,7 @@
         }
 
         .scroll-section {
-            min-height: 100vh;
-            padding: var(--section-spacing) 2rem;
+            padding: var(--section-spacing) 0rem;
             opacity: 0;
             transform: translateY(50px);
             transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), 
@@ -43,23 +42,29 @@
             align-items: center;
             position: relative;
             will-change: opacity, transform;
+            backface-visibility: hidden; /* Reduce paint flashing */
+            -webkit-backface-visibility: hidden;
+            transform: translateZ(0); /* Force GPU acceleration */
         }
 
         .scroll-section.active {
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0) translateZ(0);
+            will-change: auto; /* Remove will-change after animation */
         }
 
         .section-bg-accent {
             position: absolute;
-            width: min(30vw, 400px);
-            height: min(30vw, 400px);
+            width: 30vw;
+            height: 30vw;
             border-radius: 50%;
             background: linear-gradient(45deg, var(--primary-blue), var(--accent-color));
             filter: blur(120px);
-            opacity: 0.15;
+            opacity: 0.1;
             z-index: -1;
             will-change: transform;
+            backface-visibility: hidden;
+            transform: translateZ(0);
         }
 
         .section-bg-accent.left {
@@ -110,7 +115,7 @@
             position: fixed;
             bottom: 30px;
             left: 50%;
-            transform: translateX(-50%);
+            transform: translateX(-50%) translateZ(0);
             animation: float 2s infinite;
             z-index: 1000;
             color: var(--primary-blue);
@@ -123,11 +128,12 @@
             background: rgba(10, 11, 16, 0.5);
             backdrop-filter: blur(10px);
             border-radius: 50%;
+            will-change: opacity;
         }
 
         @keyframes float {
-            0%, 100% { transform: translateY(0) translateX(-50%); }
-            50% { transform: translateY(-15px) translateX(-50%); }
+            0%, 100% { transform: translateY(0) translateX(-50%) translateZ(0); }
+            50% { transform: translateY(-15px) translateX(-50%) translateZ(0); }
         }
 
         .analysis-result {
@@ -241,14 +247,16 @@
         .navbar {
             background: rgba(10, 11, 16, 0.8);
             backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(255,255,255,0.05);
-            padding: 1rem;
+            padding: 1rem 2rem;
             position: fixed;
             width: 100%;
             top: 0;
             z-index: 1000;
-            transition: all 0.3s ease;
+            transition: padding 0.3s ease;
+            will-change: padding;
+            transform: translateZ(0); /* Force GPU layer */
+            backface-visibility: hidden;
         }
 
         .navbar.scrolled {
@@ -266,6 +274,13 @@
             position: relative;
             transition: all 0.3s ease;
             padding: 0.5rem 0;
+        }
+        .nav-link.active,
+        .nav-link:focus,
+        .nav-link:active {
+            color: #fff !important;
+            font-weight: 600;
+            text-shadow: 0 1px 8px rgba(65,105,225,0.15);
         }
 
         .nav-link:hover, .nav-link:active {
@@ -1993,14 +2008,42 @@ def add_product():
         </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/highlight.min.js"></script>
     <script>
         hljs.highlightAll();
         
+        // Throttle function for performance
+        function throttle(func, limit) {
+            let inThrottle;
+            return function() {
+                const args = arguments;
+                const context = this;
+                if (!inThrottle) {
+                    func.apply(context, args);
+                    inThrottle = true;
+                    setTimeout(() => inThrottle = false, limit);
+                }
+            }
+        }
+        
+        // Debounce function for performance
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
-                if (entry.isIntersecting) {
+                if (entry.isIntersecting && !entry.target.classList.contains('active')) {
                     entry.target.classList.add('active');
                     
                     const animatedElements = entry.target.querySelectorAll('[data-animation]');
@@ -2014,7 +2057,7 @@ def add_product():
                     });
                 }
             });
-        }, { threshold: 0.15 });
+        }, { threshold: 0.15, rootMargin: '0px' });
 
         document.querySelectorAll('.scroll-section').forEach(section => {
             observer.observe(section);
@@ -2029,50 +2072,81 @@ def add_product():
             document.getElementById('tempValue').textContent = e.target.value;
         });
 
-        window.addEventListener('scroll', () => {
+        // Throttled scroll handler for better performance
+        const handleScroll = throttle(() => {
             const scrolled = window.scrollY > 100;
-            document.querySelector('.scroll-indicator').style.opacity = scrolled ? '0' : '1';
-            
+            const scrollIndicator = document.querySelector('.scroll-indicator');
             const navbar = document.querySelector('.navbar');
-            if (scrolled) {
-                navbar.classList.add('scrolled');
-            } else {
-                navbar.classList.remove('scrolled');
+            
+            if (scrollIndicator) {
+                scrollIndicator.style.opacity = scrolled ? '0' : '1';
             }
-        });
+            
+            if (navbar) {
+                if (scrolled && !navbar.classList.contains('scrolled')) {
+                    navbar.classList.add('scrolled');
+                } else if (!scrolled && navbar.classList.contains('scrolled')) {
+                    navbar.classList.remove('scrolled');
+                }
+            }
+        }, 16); // ~60fps
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
 
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
                 e.preventDefault();
                 
-                document.getElementById('mobileMenu').classList.remove('active');
+                const mobileMenu = document.getElementById('mobileMenu');
+                if (mobileMenu) mobileMenu.classList.remove('active');
                 
-                document.querySelector(this.getAttribute('href')).scrollIntoView({
-                    behavior: 'smooth'
-                });
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                }
             });
         });
         
-        document.getElementById('mobileMenuToggle').addEventListener('click', () => {
-            document.getElementById('mobileMenu').classList.add('active');
+        document.getElementById('mobileMenuToggle')?.addEventListener('click', () => {
+            document.getElementById('mobileMenu')?.classList.add('active');
         });
         
-        document.getElementById('mobileMenuClose').addEventListener('click', () => {
-            document.getElementById('mobileMenu').classList.remove('active');
+        document.getElementById('mobileMenuClose')?.addEventListener('click', () => {
+            document.getElementById('mobileMenu')?.classList.remove('active');
         });
         
+        // Disable parallax on mobile and optimize for desktop
         if (window.innerWidth > 768) {
-            document.addEventListener('mousemove', (e) => {
+            let ticking = false;
+            let mouseX = 0.5;
+            let mouseY = 0.5;
+            
+            const updateParallax = () => {
                 const parallaxElements = document.querySelectorAll('.parallax-element');
-                const mouseX = e.clientX / window.innerWidth - 0.5;
-                const mouseY = e.clientY / window.innerHeight - 0.5;
-                
                 parallaxElements.forEach(el => {
-                    const speed = el.dataset.parallaxSpeed || 0.1;
-                    const x = mouseX * 100 * speed;
-                    const y = mouseY * 100 * speed;
-                    el.style.transform = `translate(${x}px, ${y}px)`;
+                    const speed = parseFloat(el.dataset.parallaxSpeed) || 0.1;
+                    const x = (mouseX - 0.5) * 100 * speed;
+                    const y = (mouseY - 0.5) * 100 * speed;
+                    el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
                 });
+                ticking = false;
+            };
+            
+            document.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX / window.innerWidth;
+                mouseY = e.clientY / window.innerHeight;
+                
+                if (!ticking) {
+                    requestAnimationFrame(updateParallax);
+                    ticking = true;
+                }
+            }, { passive: true });
+        } else {
+            // Remove parallax elements on mobile to improve performance
+            document.querySelectorAll('.parallax-element').forEach(el => {
+                el.style.transform = 'none';
             });
         }
         
@@ -2249,15 +2323,17 @@ def add_product():
             
             let isTransformationActive = false;
             let animationFrame = null;
-            
+            let lastScrollY = window.scrollY;
+            let progressValue = 0;
+
             function updateTransformation() {
                 const stickyRect = stickySection.getBoundingClientRect();
                 const spacerRect = scrollSpacer.getBoundingClientRect();
                 const viewportHeight = window.innerHeight;
-                
                 const spacerTop = spacerRect.top;
                 const spacerHeight = spacerRect.height;
                 const progress = Math.max(0, Math.min(1, (viewportHeight - spacerTop) / spacerHeight));
+                progressValue = progress;
                 
                 const easeInOutCubic = (t) => {
                     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -2311,17 +2387,33 @@ def add_product():
                 
                 animationFrame = null;
             }
-            
+
             function handleScroll() {
+                const stickyRect = stickySection.getBoundingClientRect();
+                const scrollSection = document.getElementById('folder-analysis');
+                // Only run scroll lock logic if sticky is in view and progress < 1 and NOT bypassed
+                if (bypassStickyLock || !(stickyRect.top <= 0 && stickyRect.bottom > 0 && progressValue < 1)) {
+                    lastScrollY = window.scrollY;
+                    if (!animationFrame) {
+                        animationFrame = requestAnimationFrame(updateTransformation);
+                    }
+                    return; // No scroll lock needed
+                }
+                // Only block if sticky is at top of viewport (user is in sticky) and trying to scroll down
+                const stickyBottom = stickyRect.bottom + window.scrollY;
+                if (window.scrollY + window.innerHeight > stickyBottom && window.scrollY > lastScrollY) {
+                    window.scrollTo({ top: stickyBottom - window.innerHeight, behavior: 'auto' });
+                    lastScrollY = window.scrollY;
+                    return;
+                }
+                lastScrollY = window.scrollY;
                 if (!animationFrame) {
                     animationFrame = requestAnimationFrame(updateTransformation);
                 }
             }
-            
-            window.addEventListener('scroll', handleScroll, { passive: true });
-            
+
+            window.addEventListener('scroll', handleScroll, { passive: false });
             updateTransformation();
-            
             let resizeTimeout;
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimeout);
@@ -2334,7 +2426,68 @@ def add_product():
             setTimeout(initStickyFolderAnalysis, 100);
         });
         
+        let bypassStickyLock = false;
+        // Listen for nav link clicks to set bypass flag
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.navbar-nav .nav-link[href^="#"]').forEach(link => {
+                link.addEventListener('click', function() {
+                    bypassStickyLock = true;
+                    setTimeout(() => { bypassStickyLock = false; }, 2000); // Reset after 2s for safety
+                });
+            });
+        });
 
+    </script>
+    <script>
+    // ... existing JS ...
+    document.addEventListener('DOMContentLoaded', function() {
+        // Scrollspy logic - optimized with caching and throttling
+        const sections = Array.from(document.querySelectorAll('.scroll-section[id]'));
+        const navLinks = Array.from(document.querySelectorAll('.navbar-nav .nav-link[href^="#"]'));
+        const sectionOffsets = new Map();
+        
+        // Cache section offsets
+        function updateSectionOffsets() {
+            sections.forEach(section => {
+                sectionOffsets.set(section.id, section.offsetTop - 120);
+            });
+        }
+        
+        updateSectionOffsets();
+        window.addEventListener('resize', debounce(updateSectionOffsets, 250));
+
+        const onScroll = throttle(() => {
+            const scrollY = window.scrollY;
+            let current = '';
+            
+            // Find current section efficiently
+            for (const section of sections) {
+                if (scrollY >= sectionOffsets.get(section.id)) {
+                    current = section.id;
+                }
+            }
+
+            // Update nav links only if changed
+            navLinks.forEach(link => {
+                const isActive = link.getAttribute('href') === '#' + current;
+                if (isActive && !link.classList.contains('active')) {
+                    link.classList.add('active');
+                } else if (!isActive && link.classList.contains('active')) {
+                    link.classList.remove('active');
+                }
+            });
+        }, 100); // Throttle to 10fps for scrollspy
+
+        window.addEventListener('scroll', onScroll, { passive: true });
+        onScroll(); // run on load
+
+        // Blur nav links after click to prevent double highlight
+        navLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                this.blur();
+            });
+        });
+    });
     </script>
 </body>
 </html>
