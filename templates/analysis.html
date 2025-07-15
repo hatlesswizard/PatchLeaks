@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PatchLeaks - Analysis Report</title>
+    <title>PatchLeaks - Folder Analysis</title>
     <link href="/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/css/fontawesome.min.css" rel="stylesheet">
     <style>
@@ -205,6 +205,24 @@
             background: rgba(255,255,255,0.03);
         }
 
+        .form-check-input {
+            background-color: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .form-check-input:checked {
+            background-color: var(--primary-blue);
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 0.25rem rgba(65,105,225,0.2);
+        }
+
+        .form-label {
+            color: rgba(255,255,255,0.8);
+        }
+        pre {
+        color: #f8f9fa;
+        }
+
         .btn-primary {
             background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
             border: none;
@@ -215,6 +233,21 @@
         .btn-primary:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(65,105,225,0.4);
+        }
+
+        .btn-outline-primary {
+            border: 2px solid var(--primary-blue);
+            color: var(--primary-blue);
+            background: transparent;
+            transition: all 0.3s ease;
+        }
+
+        .btn-outline-primary:hover {
+            background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
+            border-color: transparent;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(65,105,225,0.4);
+            color: #fff;
         }
 
         .btn-outline-secondary {
@@ -264,6 +297,18 @@
             transform: translateY(-2px);
         }
 
+        .btn-success {
+            background: linear-gradient(135deg, var(--success-color), #2ecc71);
+            border: none;
+            box-shadow: 0 4px 15px rgba(0, 184, 148, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 184, 148, 0.4);
+        }
+
         .btn-warning {
             background: linear-gradient(135deg, var(--warning-color), #e67e22);
             border: none;
@@ -284,9 +329,24 @@
             border-left: 4px solid transparent;
         }
 
-        .alert-info {
-            border-left-color: var(--info-color);
-            background: rgba(52, 152, 219, 0.1);
+        .alert-danger {
+            border-left-color: var(--danger-color);
+            background: rgba(231, 76, 60, 0.1);
+        }
+
+        .badge {
+            padding: 0.5em 0.8em;
+            font-weight: 500;
+            border-radius: 6px;
+        }
+
+        .badge-glow {
+            animation: glow 2s infinite alternate;
+        }
+
+        @keyframes glow {
+            0% { box-shadow: 0 0 5px rgba(65,105,225,0.5); }
+            100% { box-shadow: 0 0 15px rgba(65,105,225,0.8); }
         }
 
         .section-bg-accent {
@@ -328,30 +388,37 @@
             background: rgba(65,105,225,0.5);
         }
 
+        .spinner {
+            width: 40px;
+            height: 40px;
+            position: relative;
+            margin: 100px auto;
+        }
+
+        .double-bounce1, .double-bounce2 {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: var(--primary-blue);
+            opacity: 0.6;
+            position: absolute;
+            top: 0;
+            left: 0;
+            animation: sk-bounce 2.0s infinite ease-in-out;
+        }
+
+        .double-bounce2 {
+            animation-delay: -1.0s;
+            background-color: var(--accent-color);
+        }
+
+        @keyframes sk-bounce {
+            0%, 100% { transform: scale(0.0); }
+            50% { transform: scale(1.0); }
+        }
+
         .filter-btn.active {
             background: rgba(255,255,255,0.1);
-            color: #fff;
-        }
-
-        .input-group-text {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.1);
-            color: var(--primary-blue);
-        }
-
-        .fw-bold {
-            color: #fff;
-        }
-
-        .text-muted {
-            color: rgba(255, 255, 255, 0.6) !important;
-        }
-
-        pre {
-            color: #f8f9fa;
-        }
-
-        h6 {
             color: #fff;
         }
         
@@ -447,7 +514,6 @@
                 padding: 1.5rem !important;
             }
         }
-        
         .nav-link.active {
             color: var(--primary-blue) !important;
             font-weight: 500;
@@ -457,7 +523,6 @@
             width: 100%;
             background: var(--primary-blue);
         }
-        
         .text-muted {
             color: rgba(255, 255, 255, 0.6) !important;
         }
@@ -602,11 +667,11 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link" href="/folder">Folder Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/folder">Folder Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/products">Product Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/library">Library</a></li>
                     <li class="nav-item"><a class="nav-link" href="/ai-settings">AI Analysis</a></li>
-                    <li class="nav-item"><a class="nav-link active" href="/reports">Reports</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/reports">Reports</a></li>
                 </ul>
             </div>
         </div>
@@ -616,57 +681,81 @@
     <div class="section-bg-accent right"></div>
 
     <div class="container main-container">
-        {% if status == 'in_progress' %}
-        <div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
-            <i class="fas fa-spinner fa-spin me-2"></i>
-            <div>
-                <strong>Analysis is still running...</strong> Please check back later. You can safely close this page and return at any time.
-            </div>
-        </div>
-        <script>
-        // Poll every 5 seconds to check if analysis is done
-        setInterval(function() {
-            fetch(window.location.href, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
-                .then(resp => resp.text())
-                .then(html => {
-                    if (!html.includes('Analysis is still running')) {
-                        window.location.reload();
-                    }
-                });
-        }, 5000);
-        </script>
-        {% endif %}
         <div class="row mb-4">
             <div class="col-lg-8 col-md-10 mx-auto">
-                <h2 class="display-5 fw-bold mb-3">Analysis Report</h2>
-                <p class="lead text-muted">Shared security patch analysis results</p>
-                {% if analysis.meta.ai_enabled %}
-                <span class="badge bg-info text-dark mb-2"><i class="fas fa-robot me-1"></i>AI Used: {{ analysis.meta.ai_service|upper }}</span>
-                {% endif %}
+                <h2 class="display-5 fw-bold mb-3">Folder Analysis</h2>
+                <p class="lead text-muted">Compare security patches between local directories</p>
             </div>
         </div>
 
         <div class="card shadow">
             <div class="card-body p-4">
-                <div class="alert alert-info mb-4">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-link me-2 text-info"></i>
-                        <h5 class="mb-0">Share this analysis</h5>
-                    </div>
-                    <div class="input-group mt-2">
-                        <span class="input-group-text">
-                            <i class="fas fa-share-alt text-primary"></i>
-                        </span>
-                        <input type="text" class="form-control" 
-                               value="{{ url_for('view_analysis', analysis_id=analysis_id, _external=True) }}" 
-                               id="analysisUrl" readonly>
-                        <button class="btn btn-outline-primary" onclick="copyLink()">
-                            <i class="fas fa-copy me-2"></i>Copy
-                        </button>
-                    </div>
+                {% if error %}
+                <div class="alert alert-danger mb-4">
+                    <i class="fas fa-exclamation-triangle me-2"></i> {{ error }}
                 </div>
+                {% endif %}
 
-                {% if analysis.results %}
+                <form method="post" class="mb-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Old Folder Path</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-0">
+                                    <i class="fas fa-folder text-primary"></i>
+                                </span>
+                                <input type="text" name="old_folder" class="form-control" value="{{ old_folder or '' }}" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">New Folder Path</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-0">
+                                    <i class="fas fa-folder-open text-primary"></i>
+                                </span>
+                                <input type="text" name="new_folder" class="form-control" value="{{ new_folder or '' }}" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">File Extension Filter</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-0">
+                                    <i class="fas fa-filter text-primary"></i>
+                                </span>
+                                <input type="text" name="extension" class="form-control" value="{{ extension or '' }}" placeholder=".php, .js, etc">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">CVE IDs (comma-separated)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-0">
+                                    <i class="fas fa-bug text-primary"></i>
+                                </span>
+                                <input type="text" name="cve_ids" class="form-control" value="{{ cve_ids or '' }}" placeholder="CVE-2021-44855, CVE-2022-1234">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" name="enable_ai" id="enableAI" {% if enable_ai %}checked{% endif %}>
+                                <label class="form-check-label" for="enableAI">Enable AI Analysis</label>
+                            </div>
+                            <label class="form-label">Search Keywords</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-0">
+                                    <i class="fas fa-search text-primary"></i>
+                                </span>
+                                <input type="text" name="special_keywords" class="form-control" value="{{ special_keywords }}" placeholder="sanitize, escape_html">
+                            </div>
+                        </div>
+                        <div class="col-12 mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-search me-2"></i>Analyze Diffs
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                {% if analyzed_results %}
                 <div class="mt-5">
                     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
                         <div class="btn-group mb-3">
@@ -675,7 +764,7 @@
                             <button type="button" class="btn btn-outline-danger filter-btn" data-filter="vuln">Vulnerabilities</button>
                         </div>
                         <div class="input-group mb-3" style="max-width: 300px;">
-                            <span class="input-group-text">
+                            <span class="input-group-text bg-dark border-0">
                                 <i class="fas fa-search text-primary"></i>
                             </span>
                             <input type="text" id="aiSearch" class="form-control" placeholder="Search AI responses">
@@ -684,7 +773,7 @@
                 </div>
 
                 <div class="results-container">
-                    {% for filename, result in analysis.results.items() %}
+                    {% for filename, result in analyzed_results.items() %}
                     <div class="card mb-4" 
                          data-ai-response="{{ result.ai_response.lower() if result.ai_response else '' }}"
                          data-vuln-status="{{ result.vuln_severity if result.vuln_severity else 'no' }}"
@@ -756,6 +845,22 @@
                         </div>
                     </div>
                     {% endfor %}
+                </div>
+                <div class="mt-5" id="saveSection">
+                    <button class="btn btn-success" onclick="saveAnalysis()">
+                        <i class="fas fa-save me-2"></i>Save Analysis
+                    </button>
+                    <div id="shareLink" class="mt-3" style="display: none;">
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark border-0">
+                                <i class="fas fa-link text-primary"></i>
+                            </span>
+                            <input type="text" class="form-control" id="analysisUrl" readonly>
+                            <button class="btn btn-outline-primary" onclick="copyLink()">
+                                <i class="fas fa-copy me-2"></i>Copy
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 {% endif %}
             </div>
@@ -861,6 +966,40 @@
     <script src="/static/js/bootstrap.bundle.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                const filter = this.dataset.filter;
+                const search = document.getElementById('aiSearch').value.toLowerCase();
+                
+                document.querySelectorAll('[data-vuln-status]').forEach(card => {
+                    const vulnStatus = card.dataset.vulnStatus;
+                    const cveMatch = card.dataset.cveMatch;
+                    const aiResponse = card.dataset.aiResponse || '';
+                    
+                    let show = false;
+                    if(filter === 'all') {
+                        show = search === '' || aiResponse.includes(search);
+                    } 
+                    else if(filter === 'cve') {
+                        show = cveMatch === 'yes' && 
+                              (search === '' || aiResponse.includes(search));
+                    }
+                    else if(filter === 'vuln') {
+                        show = vulnStatus === 'yes' && 
+                              (search === '' || aiResponse.includes(search));
+                    }
+                    
+                    card.style.display = show ? 'block' : 'none';
+                });
+            });
+        });
+
+        document.getElementById('aiSearch').addEventListener('input', () => {
+            document.querySelector('.filter-btn.active').click();
+        });
+
         window.addEventListener('scroll', () => {
             const navbar = document.querySelector('.navbar');
             if (window.scrollY > 50) {
@@ -870,13 +1009,52 @@
             }
         });
     });
-    
+
+    function saveAnalysis() {
+        const saveBtn = document.querySelector('#saveSection .btn-success');
+        const originalContent = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Saving...';
+        saveBtn.disabled = true;
+        
+        const analysisData = {
+            enable_ai: {% if enable_ai == 'on' %}true{% else %}false{% endif %},
+            params: {
+                old_folder: "{{ old_folder }}",
+                new_folder: "{{ new_folder }}",
+                extension: "{{ extension }}",
+                special_keywords: "{{ special_keywords }}",
+                cve_ids: "{{ cve_ids }}"
+            },
+            results: {{ analyzed_results | tojson | default({}) }}
+        };
+
+        fetch('/save-analysis', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(analysisData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            const url = `${window.location.origin}/analysis/${data.id}`;
+            document.getElementById('analysisUrl').value = url;
+            document.getElementById('shareLink').style.display = 'block';
+            
+            saveBtn.innerHTML = originalContent;
+            saveBtn.disabled = false;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            saveBtn.innerHTML = originalContent;
+            saveBtn.disabled = false;
+        });
+    }
+
     function copyLink() {
         const copyText = document.getElementById("analysisUrl");
         copyText.select();
         document.execCommand("copy");
         
-        const copyBtn = document.querySelector('.alert-info .btn');
+        const copyBtn = document.querySelector('#shareLink .btn');
         const originalContent = copyBtn.innerHTML;
         copyBtn.innerHTML = '<i class="fas fa-check me-2"></i>Copied!';
         
@@ -884,40 +1062,6 @@
             copyBtn.innerHTML = originalContent;
         }, 2000);
     }
-
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            const filter = this.dataset.filter;
-            const search = document.getElementById('aiSearch').value.toLowerCase();
-            
-            document.querySelectorAll('[data-vuln-status]').forEach(card => {
-                const vulnStatus = card.dataset.vulnStatus;
-                const cveMatch = card.dataset.cveMatch;
-                const aiResponse = card.dataset.aiResponse || '';
-                
-                let show = false;
-                if(filter === 'all') {
-                    show = search === '' || aiResponse.includes(search);
-                } 
-                else if(filter === 'cve') {
-                    show = cveMatch === 'yes' && 
-                          (search === '' || aiResponse.includes(search));
-                }
-                else if(filter === 'vuln') {
-                    show = vulnStatus === 'yes' && 
-                          (search === '' || aiResponse.includes(search));
-                }
-                
-                card.style.display = show ? 'block' : 'none';
-            });
-        });
-    });
-
-    document.getElementById('aiSearch').addEventListener('input', () => {
-        document.querySelector('.filter-btn.active').click();
-    });
     </script>
 </body>
 </html>
