@@ -492,7 +492,7 @@
                     </div>
                     <div class="report-meta">
                         <i class="far fa-calendar-alt me-1"></i>{{ report.meta.created_at.split('T')[0] }}
-                        {% if report.status == 'in_progress' %}
+                        {% if report.status == 'running' %}
                         <span class="badge bg-warning text-dark ms-2"><i class="fas fa-spinner fa-spin me-1"></i>In Progress</span>
                         {% else %}
                         <span class="badge bg-success ms-2"><i class="fas fa-check-circle me-1"></i>Completed</span>
