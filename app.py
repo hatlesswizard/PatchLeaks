@@ -28,6 +28,8 @@ import tempfile
 import shutil
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from functools import wraps
+import base64
 
 app = Flask(__name__)
 app.secret_key = secrets.token_urlsafe(32)
@@ -50,6 +52,41 @@ if not app.debug:
     app.logger.addHandler(file_handler)
     app.logger.setLevel(logging.INFO)
     app.logger.info('PatchLeaks startup')
+
+# Basic Authentication Configuration
+BASIC_AUTH_USERNAME = os.environ.get('BASIC_AUTH_USERNAME', 'a95154acfe58933e2adc8a987c70c0e9900adafe')
+BASIC_AUTH_PASSWORD = os.environ.get('BASIC_AUTH_PASSWORD', 'a95154acfe58933e2adc8a987c70c0e9900adafe')
+
+def check_basic_auth(username, password):
+    """Check if username and password are valid."""
+    return username == BASIC_AUTH_USERNAME and password == BASIC_AUTH_PASSWORD
+
+def requires_basic_auth(f):
+    """Decorator that requires basic authentication."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_basic_auth(auth.username, auth.password):
+            return ('Authentication required', 401, {
+                'WWW-Authenticate': 'Basic realm="Login Required"'
+            })
+        return f(*args, **kwargs)
+    return decorated_function
+
+def conditional_auth(methods_to_protect):
+    """Decorator that applies basic auth only to specified HTTP methods."""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if request.method in methods_to_protect:
+                auth = request.authorization
+                if not auth or not check_basic_auth(auth.username, auth.password):
+                    return ('Authentication required', 401, {
+                        'WWW-Authenticate': 'Basic realm="Login Required"'
+                    })
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 ALLOWED_EXTENSIONS = frozenset(['.txt', '.py', '.js', '.html', '.css', '.json', '.md', '.xml', '.yaml', '.yml', '.php', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.rb', '.sql', '.sh', '.bat', '.tsx', '.ts', '.vue', '.jsx'])
 VALID_AI_SERVICES = frozenset(['ollama', 'openai', 'deepseek', 'claude'])
@@ -1005,6 +1042,7 @@ def view_analysis(analysis_id):
 
 @app.route('/delete-analysis/<analysis_id>', methods=['POST'])
 @limiter.limit("10 per minute")
+@requires_basic_auth
 def delete_analysis(analysis_id):
     if not validate_uuid(analysis_id):
         flash('Invalid analysis ID.', 'danger')
@@ -1031,6 +1069,7 @@ def delete_analysis(analysis_id):
 
 @app.route('/ai-settings', methods=['GET','POST'])
 @limiter.limit("5 per minute")
+@conditional_auth(['GET'])
 def ai_settings():
     if request.method == 'POST':
         ai_service = validate_input(request.form.get('ai_service'), 50)
@@ -1299,6 +1338,7 @@ def run_analysis_background(analysis_id, params, mode):
 
 @app.route('/products', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
+@conditional_auth(['POST'])
 def products():
     products_data = load_json_safe(PRODUCTS_FILE, {})
     products_list = list(products_data.keys()) if isinstance(products_data, dict) else []
@@ -1342,6 +1382,7 @@ def products():
 
 @app.route('/folder', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
+@conditional_auth(['POST'])
 def folder():
     if request.method == 'POST':
         old_folder = validate_input(request.form.get('old_folder'), 500)
@@ -1356,7 +1397,7 @@ def folder():
             return redirect(url_for('folder'))
         
         if not (os.path.exists(old_folder) and os.path.exists(new_folder)):
-            flash('One or both folder paths do not exist', 'error')
+            flash('Invalid folder paths', 'error')
             return redirect(url_for('folder'))
         
         try:
@@ -1388,6 +1429,7 @@ def folder():
 
 @app.route('/library', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
+@conditional_auth(['POST'])
 def library():
     if request.method == 'POST':
         name = validate_input(request.form.get('name'), 100)
