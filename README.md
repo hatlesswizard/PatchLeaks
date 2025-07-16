@@ -1,17 +1,16 @@
 # PatchLeaks – From Patch to PoC  
+🚀 **[Try PatchLeaks Live Demo](https://pwn.az)** 🚀
+
 [![GNU AGPL v3 License](https://img.shields.io/badge/License-GNU%20AGPL%20v3-blue)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/hatlesswizard/patchleaks)](https://github.com/hatlesswizard/patchleaks/issues)
 [![Stars](https://img.shields.io/github/stars/hatlesswizard/patchleaks?style=social)](https://github.com/hatlesswizard/patchleaks/stargazers)
 
 > **Go from a CVE number to the exact patched code and its vulnerability analysis**
-
 ---
-
 ## Overview
 PatchLeaks compares two versions of a code‑base, highlights lines changed by vendor, and explains *why* they matter. Feed the tool an old and a patched version; PatchLeaks spots the security fix and provides detailed description so you can validate—or weaponize—it fast.
 
 ---
-
 ## Why PatchLeaks?
 | **Real-World Challenge** | **Old-School Pain** | **PatchLeaks Fix** |
 | :-- | :-- | :-- |
@@ -21,7 +20,6 @@ PatchLeaks compares two versions of a code‑base, highlights lines changed by v
 | 0-day triage under the gun | Hours•days of eyeballing | **Minutes** to first actionable insight |
 
 ---
-
 ## Key Features
 - **Folder Analysis** — Compare any two local directories  
 - **Product Analysis** — Use public GitHub repository directly; PatchLeaks fetches, compares, and reports.
@@ -30,9 +28,7 @@ PatchLeaks compares two versions of a code‑base, highlights lines changed by v
 - **Reports** — Save, reopen, and share analyses; every run is reproducible.
 - **Pluggable Back-Ends** — Works with both self and cloud hosted AI models.
 
-
 ---
-
 ## Reports
 
 | View          | What You Get                                                     |
@@ -42,9 +38,7 @@ PatchLeaks compares two versions of a code‑base, highlights lines changed by v
 | **Search**    | Keyword & CVE filters across all saved analyses                  |
 | **Share**     | Save your analysis sessions and share findings with your team via a unique link. |
 
-
 ---
-
 ## License
 
 PatchLeaks is released under the GNU AGPL v3 License. See [`LICENSE`](LICENSE) for full text.
