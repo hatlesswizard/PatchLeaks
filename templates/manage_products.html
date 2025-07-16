@@ -382,6 +382,21 @@
             </div>
         </div>
 
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="container mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show">
+                            <i class="fas fa-{{ 'exclamation-triangle' if category in ['error', 'danger'] else 'check-circle' if category == 'success' else 'info-circle' }} me-2"></i>
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
         <div class="card shadow">
             <div class="card-body p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -565,6 +580,7 @@
     </footer>
 
     <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/notifications.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('scroll', () => {
