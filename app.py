@@ -259,11 +259,23 @@ def create_new_analysis_record(params, source, ai_enabled):
     analysis_id = str(uuid.uuid4())
     source = source if source in VALID_SOURCES else 'direct'
     
+    # Get AI configuration if AI is enabled
+    ai_service = None
+    ai_model = None
+    if ai_enabled:
+        config = load_ai_config()
+        ai_service = config.get('service', 'ollama')
+        # Get the model from the appropriate service config
+        if ai_service in config:
+            ai_model = config[ai_service].get('model', 'Unknown')
+    
     analysis_data = {
         'meta': {
             'created_at': datetime.now().isoformat(),
             'source': source,
             'ai_enabled': bool(ai_enabled),
+            'ai_service': ai_service,
+            'ai_model': ai_model,
             'params': params,
             'status': 'running'
         },
@@ -354,6 +366,15 @@ def run_library_analysis_background(analysis_id, params):
 
         analysis_data['meta']['status'] = 'completed'
         analysis_data['results'] = analyzed_results
+        
+        # Update AI service and model information if AI was used
+        if params['enable_ai'] == 'on':
+            config = load_ai_config()
+            ai_service = params.get('ai_service', config.get('service', 'ollama'))
+            analysis_data['meta']['ai_service'] = ai_service
+            if ai_service in config:
+                analysis_data['meta']['ai_model'] = config[ai_service].get('model', 'Unknown')
+        
         with open(analysis_path, 'w') as f:
             json.dump(analysis_data, f, indent=2)
 
@@ -921,11 +942,23 @@ def save_analysis():
     
     analysis_id = str(uuid.uuid4())
     
+    # Get AI configuration if AI is enabled
+    ai_service = None
+    ai_model = None
+    if data.get('enable_ai', False):
+        config = load_ai_config()
+        ai_service = config.get('service', 'ollama')
+        # Get the model from the appropriate service config
+        if ai_service in config:
+            ai_model = config[ai_service].get('model', 'Unknown')
+    
     analysis_data = {
         'meta': {
             'created_at': datetime.now().isoformat(),
             'source': validate_input(data.get('source', 'direct'), 20),
             'ai_enabled': bool(data.get('enable_ai', False)),
+            'ai_service': ai_service,
+            'ai_model': ai_model,
             'params': data.get('params', {})
         },
         'results': data.get('results', {})
@@ -1241,6 +1274,15 @@ def run_analysis_background(analysis_id, params, mode):
             analysis_data = json.load(f)
         analysis_data['meta']['status'] = 'completed'
         analysis_data['results'] = analyzed_results
+        
+        # Update AI service and model information if AI was used
+        if params.get('enable_ai') == 'on':
+            config = load_ai_config()
+            ai_service = config.get('service', 'ollama')
+            analysis_data['meta']['ai_service'] = ai_service
+            if ai_service in config:
+                analysis_data['meta']['ai_model'] = config[ai_service].get('model', 'Unknown')
+        
         with open(analysis_path, 'w') as f:
             json.dump(analysis_data, f, indent=2)
             
