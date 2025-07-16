@@ -1420,4 +1420,4 @@ if __name__ == '__main__':
         with open(os.path.join(PRODUCTS_DIR, 'magento.json'), 'w') as f:
             json.dump([], f)
     
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=80, debug=False)
