@@ -702,6 +702,21 @@ pre {
                 <p class="lead text-muted">Compare security patches between product versions</p>
             </div>
         </div>
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="container mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show">
+                            <i class="fas fa-{{ 'exclamation-triangle' if category in ['error', 'danger'] else 'check-circle' if category == 'success' else 'info-circle' }} me-2"></i>
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
         <div class="card shadow">
             <div class="card-body p-4">
                 {% if error %}
@@ -1019,6 +1034,7 @@ pre {
 </footer>
 
     <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/notifications.js"></script>
     <script src="/static/js/jquery.min.js"></script>
     <script>
     $(document).ready(function() {
@@ -1071,39 +1087,50 @@ pre {
                 });
         }
 
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                const filter = this.dataset.filter;
-                const search = document.getElementById('aiSearch').value.toLowerCase();
-                
-                document.querySelectorAll('[data-vuln-status]').forEach(card => {
-                    const vulnStatus = card.dataset.vulnStatus;
-                    const cveMatch = card.dataset.cveMatch;
-                    const aiResponse = card.dataset.aiResponse || '';
+        // Only add event listeners if the elements exist (when there are results)
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        const aiSearchInput = document.getElementById('aiSearch');
+        
+        if (filterBtns.length > 0) {
+            filterBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    const filter = this.dataset.filter;
+                    const search = aiSearchInput ? aiSearchInput.value.toLowerCase() : '';
                     
-                    let show = false;
-                    if(filter === 'all') {
-                        show = search === '' || aiResponse.includes(search);
-                    } 
-                    else if(filter === 'cve') {
-                        show = cveMatch === 'yes' && 
-                        (search === '' || aiResponse.includes(search));
-                    }
-                    else if(filter === 'vuln') {
-                        show = vulnStatus === 'yes' && 
-                              (search === '' || aiResponse.includes(search));
-                    }
-                    
-                    card.style.display = show ? 'block' : 'none';
+                    document.querySelectorAll('[data-vuln-status]').forEach(card => {
+                        const vulnStatus = card.dataset.vulnStatus;
+                        const cveMatch = card.dataset.cveMatch;
+                        const aiResponse = card.dataset.aiResponse || '';
+                        
+                        let show = false;
+                        if(filter === 'all') {
+                            show = search === '' || aiResponse.includes(search);
+                        } 
+                        else if(filter === 'cve') {
+                            show = cveMatch === 'yes' && 
+                            (search === '' || aiResponse.includes(search));
+                        }
+                        else if(filter === 'vuln') {
+                            show = vulnStatus === 'yes' && 
+                                  (search === '' || aiResponse.includes(search));
+                        }
+                        
+                        card.style.display = show ? 'block' : 'none';
+                    });
                 });
             });
-        });
+        }
 
-        document.getElementById('aiSearch').addEventListener('input', () => {
-            document.querySelector('.filter-btn.active').click();
-        });
+        if (aiSearchInput) {
+            aiSearchInput.addEventListener('input', () => {
+                const activeBtn = document.querySelector('.filter-btn.active');
+                if (activeBtn) {
+                    activeBtn.click();
+                }
+            });
+        }
 
         window.addEventListener('scroll', () => {
             const navbar = document.querySelector('.navbar');
@@ -1141,15 +1168,27 @@ pre {
         })
         .then(response => response.json())
         .then(data => {
-            const url = `${window.location.origin}/analysis/${data.id}`;
-            document.getElementById('analysisUrl').value = url;
-            document.getElementById('shareLink').style.display = 'block';
+            if (data.error) {
+                if (window.notifications) {
+                    window.notifications.error(data.error);
+                }
+            } else {
+                const url = `${window.location.origin}/analysis/${data.id}`;
+                document.getElementById('analysisUrl').value = url;
+                document.getElementById('shareLink').style.display = 'block';
+                if (window.notifications) {
+                    window.notifications.success('Analysis saved successfully!');
+                }
+            }
             
             saveBtn.innerHTML = originalContent;
             saveBtn.disabled = false;
         })
         .catch(error => {
             console.error('Error:', error);
+            if (window.notifications) {
+                window.notifications.error('Failed to save analysis. Please try again.');
+            }
             saveBtn.innerHTML = originalContent;
             saveBtn.disabled = false;
         });
@@ -1163,6 +1202,10 @@ pre {
         const copyBtn = document.querySelector('#shareLink .btn');
         const originalContent = copyBtn.innerHTML;
         copyBtn.innerHTML = '<i class="fas fa-check me-2"></i>Copied!';
+        
+        if (window.notifications) {
+            window.notifications.success('Analysis link copied to clipboard!');
+        }
         
         setTimeout(() => {
             copyBtn.innerHTML = originalContent;
