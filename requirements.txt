@@ -1,0 +1,7 @@
+Flask==2.3.3
+requests==2.31.0
+beautifulsoup4==4.12.2
+APScheduler==3.10.4
+cachetools==5.3.2
+Flask-Limiter==3.5.0
+Werkzeug==2.3.7 
