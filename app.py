@@ -28,6 +28,8 @@ import tempfile
 import shutil
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from functools import wraps
+import base64
 
 app = Flask(__name__)
 app.secret_key = secrets.token_urlsafe(32)
@@ -50,6 +52,41 @@ if not app.debug:
     app.logger.addHandler(file_handler)
     app.logger.setLevel(logging.INFO)
     app.logger.info('PatchLeaks startup')
+
+# Basic Authentication Configuration
+BASIC_AUTH_USERNAME = os.environ.get('BASIC_AUTH_USERNAME', '4ba86d22361ad4dc8728097f0aac85d1')
+BASIC_AUTH_PASSWORD = os.environ.get('BASIC_AUTH_PASSWORD', '07f88d7227784a3bcbb8d14f9cdd57c5')
+
+def check_basic_auth(username, password):
+    """Check if username and password are valid."""
+    return username == BASIC_AUTH_USERNAME and password == BASIC_AUTH_PASSWORD
+
+def requires_basic_auth(f):
+    """Decorator that requires basic authentication."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_basic_auth(auth.username, auth.password):
+            return ('Authentication required', 401, {
+                'WWW-Authenticate': 'Basic realm="Login Required"'
+            })
+        return f(*args, **kwargs)
+    return decorated_function
+
+def conditional_auth(methods_to_protect):
+    """Decorator that applies basic auth only to specified HTTP methods."""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if request.method in methods_to_protect:
+                auth = request.authorization
+                if not auth or not check_basic_auth(auth.username, auth.password):
+                    return ('Authentication required', 401, {
+                        'WWW-Authenticate': 'Basic realm="Login Required"'
+                    })
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 ALLOWED_EXTENSIONS = frozenset(['.txt', '.py', '.js', '.html', '.css', '.json', '.md', '.xml', '.yaml', '.yml', '.php', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.rb', '.sql', '.sh', '.bat', '.tsx', '.ts', '.vue', '.jsx'])
 VALID_AI_SERVICES = frozenset(['ollama', 'openai', 'deepseek', 'claude'])
@@ -95,6 +132,16 @@ def validate_input(input_str, max_length=1000, pattern=None):
     if pattern and not re.match(pattern, clean_input):
         return ""
     return clean_input.strip()
+
+def validate_prompt(prompt_str, max_length=5000):
+    """Validate prompt text while preserving newlines and formatting."""
+    if not prompt_str:
+        return ""
+    # Only remove null bytes and other dangerous control characters, but keep newlines and tabs
+    clean_prompt = re.sub(r'[\x00\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', str(prompt_str))
+    if len(clean_prompt) > max_length:
+        clean_prompt = clean_prompt[:max_length]
+    return clean_prompt.strip()
 
 def validate_url(url):
     if not url:
@@ -406,7 +453,35 @@ def load_ai_config():
         'openai': {'key': '', 'model': 'gpt-4-turbo', 'base_url': 'https://api.openai.com/v1'},
         'deepseek': {'key': '', 'model': 'deepseek-coder-33b-instruct', 'base_url': 'https://api.deepseek.com/v1'},
         'claude': {'key': '', 'model': 'claude-3-opus-20240229', 'base_url': 'https://api.anthropic.com/v1'},
-        'parameters': {'temperature': 1.0, 'num_ctx': 8192}
+        'parameters': {'temperature': 1.0, 'num_ctx': 8192},
+        'prompts': {
+            'main_analysis': """Analyze the provided code diff for security fixes.
+
+Instructions:
+1. Your answer MUST strictly follow the answer format outlined below.
+2. Always include the vulnerability name if one exists.
+3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.
+4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.
+
+Answer Format for Each Vulnerability:
+    Vulnerability Existed: [yes/no/not sure]
+    [Vulnerability Name] [File] [Lines]
+    [Old Code]
+    [Fixed Code]
+
+Additional Details:
+    File: {file_path}
+    Diff Content:
+    {diff_content}""",
+            'cve_analysis': """Analysis:
+{ai_response}
+
+Question: Do any of the vulnerabilities identified in the analysis match the description?
+Reply strictly in this format: 'Description Matches: Yes/No' 
+
+Description:
+{cve_description}"""
+        }
     }
     
     config = load_json_safe(AI_CONFIG_FILE, default)
@@ -420,12 +495,21 @@ def load_ai_config():
             for key, value in default[service].items():
                 if key not in config[service] or config[service][key] is None:
                     config[service][key] = value
+    
+    # Ensure prompts section exists
+    if 'prompts' not in config:
+        config['prompts'] = default['prompts']
+    else:
+        for key, value in default['prompts'].items():
+            if key not in config['prompts']:
+                config['prompts'][key] = value
+    
     return config
 
 @cached(ai_cache)
 def get_ai_analysis(file_path, diff_content):
     config = load_ai_config()
-    prompt = f"Analyze the provided code diff for security fixes.\n\nInstructions:\n1. Your answer MUST strictly follow the answer format outlined below.\n2. Always include the vulnerability name if one exists.\n3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.\n4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.\n\nAnswer Format for Each Vulnerability:\n    Vulnerability Existed: [yes/no/not sure]\n    [Vulnerability Name] [File] [Lines]\n    [Old Code]\n    [Fixed Code]\n\nAdditional Details:\n    File: {file_path}\n    Diff Content:\n    {diff_content}"
+    prompt = config['prompts']['main_analysis'].format(file_path=file_path, diff_content=diff_content)
     
     retry_count = 0
     while retry_count < 3:
@@ -512,7 +596,8 @@ def get_cve_description(cve_id):
         return f"Failed to fetch CVE description: {str(e)}"
 
 def analyze_with_cve(ai_response, cve_description):
-    analysis_prompt = f"Analysis:\n{ai_response}\nQuestion: Do any of the vulnerabilities identified in the analysis match the description?\nReply strictly in this format: 'Description Matches: Yes/No' \nDescription:{cve_description}"
+    config = load_ai_config()
+    analysis_prompt = config['prompts']['cve_analysis'].format(ai_response=ai_response, cve_description=cve_description)
     
     retry_count = 0
     while retry_count < 3:
@@ -648,8 +733,7 @@ def compare_single_file(file_info):
     if not validate_filename(file):
         return None
     
-    if ext_filter and not file.endswith(ext_filter):
-        return None
+    # Extension filtering is now done earlier in compare_folders, so we can remove it from here
     
     old_path = os.path.join(old_folder, file)
     new_path = os.path.join(new_folder, file)
@@ -708,9 +792,32 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
         new_files = get_files(new_folder)
         common_files = old_files & new_files
         
-        if len(common_files) > 10000:
-            app.logger.warning(f"Too many files to compare: {len(common_files)}")
-            return
+        # Apply extension filter BEFORE file count check
+        if ext_filter:
+            # Parse comma-separated extensions
+            extensions = [ext.strip() for ext in ext_filter.split(',') if ext.strip()]
+            
+            # Normalize extensions (add dot prefix if missing, convert to lowercase)
+            normalized_extensions = []
+            for ext in extensions:
+                ext = ext.strip()
+                if ext:
+                    # Add dot prefix if missing
+                    if not ext.startswith('.'):
+                        ext = '.' + ext
+                    normalized_extensions.append(ext.lower())
+            
+            # Filter files by extension
+            if normalized_extensions:
+                filtered_files = set()
+                for file in common_files:
+                    file_extension = os.path.splitext(file)[1].lower()
+                    if file_extension in normalized_extensions:
+                        filtered_files.add(file)
+                common_files = filtered_files
+                app.logger.info(f"Extension filter applied: {len(common_files)} files match extensions {ext_filter}")
+        
+
         
         file_tasks = [(file, old_folder, new_folder, ext_filter, manual_keywords) for file in common_files]
         max_workers = min(32, len(file_tasks))
@@ -856,8 +963,6 @@ def get_github_versions(repo_url):
         
         versions = list(dict.fromkeys(versions))
         
-        if len(versions) > 1000:
-            versions = versions[:1000]
         
         def sort_key(version):
             clean_version = version.lstrip('v')
@@ -1005,6 +1110,7 @@ def view_analysis(analysis_id):
 
 @app.route('/delete-analysis/<analysis_id>', methods=['POST'])
 @limiter.limit("10 per minute")
+@requires_basic_auth
 def delete_analysis(analysis_id):
     if not validate_uuid(analysis_id):
         flash('Invalid analysis ID.', 'danger')
@@ -1031,6 +1137,7 @@ def delete_analysis(analysis_id):
 
 @app.route('/ai-settings', methods=['GET','POST'])
 @limiter.limit("5 per minute")
+@requires_basic_auth
 def ai_settings():
     if request.method == 'POST':
         ai_service = validate_input(request.form.get('ai_service'), 50)
@@ -1072,6 +1179,10 @@ def ai_settings():
             'parameters': {
                 'temperature': temperature,
                 'num_ctx': num_ctx
+            },
+            'prompts': {
+                'main_analysis': validate_prompt(request.form.get('main_analysis_prompt'), 5000),
+                'cve_analysis': validate_prompt(request.form.get('cve_analysis_prompt'), 5000)
             }
         }
         
@@ -1083,6 +1194,67 @@ def ai_settings():
         return redirect(url_for('ai_settings'))
     
     return render_template("ai_settings.html", config=load_ai_config())
+
+@app.route('/reset-prompts', methods=['POST'])
+@limiter.limit("5 per minute")
+@requires_basic_auth
+def reset_prompts():
+    try:
+        # Load current config
+        config = load_ai_config()
+        
+        # Get default prompts
+        default_config = {
+            'service': 'ollama',
+            'ollama': {'url': 'http://localhost:11434', 'model': 'qwen2.5-coder:3b'},
+            'openai': {'key': '', 'model': 'gpt-4-turbo', 'base_url': 'https://api.openai.com/v1'},
+            'deepseek': {'key': '', 'model': 'deepseek-coder-33b-instruct', 'base_url': 'https://api.deepseek.com/v1'},
+            'claude': {'key': '', 'model': 'claude-3-opus-20240229', 'base_url': 'https://api.anthropic.com/v1'},
+            'parameters': {'temperature': 1.0, 'num_ctx': 8192},
+            'prompts': {
+                'main_analysis': """Analyze the provided code diff for security fixes.
+
+Instructions:
+1. Your answer MUST strictly follow the answer format outlined below.
+2. Always include the vulnerability name if one exists.
+3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.
+4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.
+
+Answer Format for Each Vulnerability:
+    Vulnerability Existed: [yes/no/not sure]
+    [Vulnerability Name] [File] [Lines]
+    [Old Code]
+    [Fixed Code]
+
+Additional Details:
+    File: {file_path}
+    Diff Content:
+    {diff_content}""",
+                'cve_analysis': """Analysis:
+{ai_response}
+
+Question: Do any of the vulnerabilities identified in the analysis match the description?
+Reply strictly in this format: 'Description Matches: Yes/No' 
+
+Description:
+{cve_description}"""
+            }
+        }
+        
+        # Reset only the prompts section
+        config['prompts'] = default_config['prompts']
+        
+        # Save the updated config
+        if save_json_safe(AI_CONFIG_FILE, config):
+            flash('Prompts reset to default values successfully', 'success')
+        else:
+            flash('Error resetting prompts', 'danger')
+        
+        return redirect(url_for('ai_settings'))
+    except Exception as e:
+        app.logger.error(f"Error resetting prompts: {str(e)}")
+        flash('Error resetting prompts', 'danger')
+        return redirect(url_for('ai_settings'))
 
 @app.route('/reports')
 @limiter.limit("20 per minute")
@@ -1124,6 +1296,7 @@ def reports():
 
 @app.route('/manage-products', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
+@conditional_auth(['POST'])
 def manage_products():
     if request.method == 'POST':
         product_name = validate_input(request.form.get('product_name'), 100, r'^[a-zA-Z0-9._-]+$')
@@ -1154,6 +1327,7 @@ def manage_products():
 
 @app.route('/delete-product/<product_name>')
 @limiter.limit("10 per minute")
+@requires_basic_auth
 def delete_product(product_name):
     product_name = validate_input(product_name, 100, r'^[a-zA-Z0-9._-]+$')
     if not product_name:
@@ -1299,6 +1473,7 @@ def run_analysis_background(analysis_id, params, mode):
 
 @app.route('/products', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
+@conditional_auth(['POST'])
 def products():
     products_data = load_json_safe(PRODUCTS_FILE, {})
     products_list = list(products_data.keys()) if isinstance(products_data, dict) else []
@@ -1342,6 +1517,7 @@ def products():
 
 @app.route('/folder', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
+@conditional_auth(['POST'])
 def folder():
     if request.method == 'POST':
         old_folder = validate_input(request.form.get('old_folder'), 500)
@@ -1388,6 +1564,7 @@ def folder():
 
 @app.route('/library', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
+@conditional_auth(['POST'])
 def library():
     if request.method == 'POST':
         name = validate_input(request.form.get('name'), 100)
