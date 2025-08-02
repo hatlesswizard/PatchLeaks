@@ -136,7 +136,7 @@ python app.py
 3. Go back to products and choose name of GitHub repository
 4. Select version tags/branches to compare
 5. Enable AI analysis
-4. Let PatchLeaks fetch and analyze automatically
+6. Let PatchLeaks fetch and analyze automatically
 ```
 
 ### 📚 **Library Management & Auto-Monitoring**
