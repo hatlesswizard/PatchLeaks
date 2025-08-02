@@ -1,5 +1,5 @@
 # PatchLeaks – From Patch to PoC  
-🚀 **[Try PatchLeaks Live Demo](https://pwn.az) [Start with GitHub Repository Analysis](https://github.com/hatlesswizard/PatchLeaks/main/README.md#-github-repository-analysis)** 🚀
+🚀 **[Try PatchLeaks Live Demo](https://pwn.az) [Start with GitHub Repository Analysis](#-github-repository-analysis)** 🚀
 
 [![GNU AGPL v3 License](https://img.shields.io/badge/License-GNU%20AGPL%20v3-blue)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/hatlesswizard/patchleaks)](https://github.com/hatlesswizard/patchleaks/issues)
