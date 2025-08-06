@@ -1,35 +1,120 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, abort
 import os
 import re
-import difflib
-import requests
 import json
-import concurrent.futures
-from concurrent.futures import ThreadPoolExecutor
-from cachetools import cached, TTLCache
-from bs4 import BeautifulSoup
-import zipfile
-from threading import Lock
-from datetime import datetime
 import time
 import uuid
-import threading
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-import atexit
-import secrets
-import hashlib
-import urllib.parse
-from werkzeug.utils import secure_filename
-from pathlib import Path
-import logging
-from logging.handlers import RotatingFileHandler
 import tempfile
 import shutil
+import urllib.parse
+import concurrent.futures
+import threading
+from datetime import datetime
+from pathlib import Path
+from functools import wraps
+from threading import Lock
+from concurrent.futures import ThreadPoolExecutor
+import requests
+import difflib
+from bs4 import BeautifulSoup
+import zipfile
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, abort
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+import secrets
+from werkzeug.utils import secure_filename
+import logging
+from logging.handlers import RotatingFileHandler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from functools import wraps
-import base64
+import atexit
+
+BASIC_AUTH_USERNAME = os.environ.get('BASIC_AUTH_USERNAME', '4ba86d22361ad4dc8728097f0aac85d1')
+BASIC_AUTH_PASSWORD = os.environ.get('BASIC_AUTH_PASSWORD', '07f88d7227784a3bcbb8d14f9cdd57c5')
+
+VALID_AI_SERVICES = frozenset(['ollama', 'openai', 'deepseek', 'claude'])
+VALID_SOURCES = frozenset(['library_auto', 'products', 'folder', 'direct'])
+
+PRODUCTS_DIR = os.path.join(os.path.dirname(__file__), 'products')
+AI_CONFIG_FILE = 'ai_config.json'
+PRODUCTS_FILE = os.path.join(PRODUCTS_DIR, 'products.json')
+LIBRARY_FILE = os.path.join(PRODUCTS_DIR, 'library.json')
+SAVED_ANALYSES_DIR = os.path.join(os.path.dirname(__file__), 'saved_analyses')
+
+DEFAULT_TIMEOUT = 300
+CVE_FETCH_TIMEOUT = 60
+MAX_RETRY_ATTEMPTS = 3
+RATE_LIMIT_BACKOFF_BASE = 2
+MAX_BACKOFF_TIME = 60
+
+MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_DIFF_FILE_SIZE = 100 * 1024 * 1024
+
+DEFAULT_AI_SERVICE = 'ollama'
+DEFAULT_TEMPERATURE = 1.0
+DEFAULT_CONTEXT_SIZE = 8192
+DEFAULT_MAX_TOKENS = 1000
+
+AI_SERVICE_CONFIGS = {
+    'ollama': {
+        'url': 'http://localhost:11434',
+        'model': 'qwen2.5-coder:3b',
+        'endpoint': '/api/generate'
+    },
+    'openai': {
+        'base_url': 'https://api.openai.com/v1',
+        'model': 'gpt-4-turbo',
+        'endpoint': '/chat/completions'
+    },
+    'deepseek': {
+        'base_url': 'https://api.deepseek.com/v1',
+        'model': 'deepseek-chat',
+        'endpoint': '/chat/completions'
+    },
+    'claude': {
+        'base_url': 'https://api.anthropic.com/v1',
+        'model': 'claude-3-opus-20240229',
+        'endpoint': '/messages',
+        'version': '2023-06-01'
+    }
+}
+
+DEFAULT_PROMPTS = {
+    'main_analysis': """Analyze the provided code diff for security fixes.
+
+Instructions:
+1. Your answer MUST strictly follow the answer format outlined below.
+2. Always include the vulnerability name if one exists.
+3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.
+4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.
+
+Answer Format for Each Vulnerability:
+    Vulnerability Existed: [yes/no/not sure]
+    [Vulnerability Name] [File] [Lines]
+    [Old Code]
+    [Fixed Code]
+
+Additional Details:
+    File: {file_path}
+    Diff Content:
+    {diff_content}""",
+    'cve_analysis': """Analysis:
+{ai_response}
+
+Question: Do any of the vulnerabilities identified in the analysis match the description?
+Reply strictly in this format: 'Description Matches: Yes/No' 
+
+Description:
+{cve_description}"""
+}
+
+HTTP_OK = 200
+HTTP_RATE_LIMITED = 429
+HTTP_UNAUTHORIZED = 401
+
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0"
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 80
 
 app = Flask(__name__)
 app.secret_key = secrets.token_urlsafe(32)
@@ -53,8 +138,12 @@ if not app.debug:
     app.logger.setLevel(logging.INFO)
     app.logger.info('PatchLeaks startup')
 
-BASIC_AUTH_USERNAME = os.environ.get('BASIC_AUTH_USERNAME', '4ba86d22361ad4dc8728097f0aac85d1')
-BASIC_AUTH_PASSWORD = os.environ.get('BASIC_AUTH_PASSWORD', '07f88d7227784a3bcbb8d14f9cdd57c5')
+scheduler = BackgroundScheduler()
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
+
+os.makedirs(SAVED_ANALYSES_DIR, exist_ok=True)
+os.chmod(SAVED_ANALYSES_DIR, 0o755)
 
 def check_basic_auth(username, password):
     return username == BASIC_AUTH_USERNAME and password == BASIC_AUTH_PASSWORD
@@ -83,40 +172,6 @@ def conditional_auth(methods_to_protect):
             return f(*args, **kwargs)
         return decorated_function
     return decorator
-
-VALID_AI_SERVICES = frozenset(['ollama', 'openai', 'deepseek', 'claude'])
-VALID_SOURCES = frozenset(['library_auto', 'products', 'folder', 'direct'])
-
-ai_cache = TTLCache(maxsize=1000000000, ttl=0)
-VERSION_CACHE = TTLCache(maxsize=100, ttl=0)
-version_lock = Lock()
-
-PRODUCTS_DIR = os.path.join(os.path.dirname(__file__), 'products')
-AI_CONFIG_FILE = 'ai_config.json'
-PRODUCTS_FILE = os.path.join(PRODUCTS_DIR, 'products.json')
-LIBRARY_FILE = os.path.join(PRODUCTS_DIR, 'library.json')
-SAVED_ANALYSES_DIR = os.path.join(os.path.dirname(__file__), 'saved_analyses')
-
-os.makedirs(SAVED_ANALYSES_DIR, exist_ok=True)
-os.chmod(SAVED_ANALYSES_DIR, 0o755)
-
-scheduler = BackgroundScheduler()
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
-
-def get_safe_path(base_dir, user_path):
-    try:
-        base_path = Path(base_dir).resolve()
-        clean_path = secure_filename(str(user_path)) if user_path else ""
-        if not clean_path:
-            return None
-        full_path = (base_path / clean_path).resolve()
-        return str(full_path) if str(full_path).startswith(str(base_path)) else None
-    except Exception:
-        return None
-
-def is_allowed_file(filename):
-    return True
 
 def validate_input(input_str, max_length=1000, pattern=None):
     if not input_str:
@@ -285,7 +340,7 @@ def trigger_auto_analysis(repo, old_version, new_version):
             'ai_service': validate_input(repo.get('ai_service', 'ollama'), 50),
             'extension': None,
             'enable_ai': 'on',
-            'special_keywords': 'security,vulnerability,fix,patch,cve,exploit,auth,password,sql,xss,csrf',
+            'special_keywords': '',
             'cve_ids': ''
         }
         
@@ -396,13 +451,12 @@ def run_library_analysis_background(analysis_id, params):
             raise Exception(f"Required versions {old_ver} and/or {new_ver} not found in downloaded versions")
 
         app.logger.info(f"Starting folder comparison for {repo_name}: {old_path} -> {new_path}")
-        compare_folders(old_path, new_path, params.get('extension'), 
-                       params['special_keywords'].split(',') if params['special_keywords'] else None)
+        special_keywords = params['special_keywords'].split(',') if params['special_keywords'] and params['special_keywords'].strip() else None
+        compare_folders(old_path, new_path, params.get('extension'), special_keywords)
         diffs = parse_diff_file("special.txt")
         app.logger.info(f"Found {len(diffs)} diff files for {repo_name}")
-        analyzed_results = analyze_diffs_with_keywords(diffs, 
-                                                     params['special_keywords'].split(',') if params['special_keywords'] else None)
-        app.logger.info(f"Analyzed {len(analyzed_results)} files with keywords for {repo_name}")
+        analyzed_results = analyze_diffs_with_keywords(diffs, special_keywords)
+        app.logger.info(f"Analyzed {len(analyzed_results)} files for {repo_name}")
 
         if params['enable_ai'] == 'on' and analyzed_results:
             original_config = load_ai_config()
@@ -457,40 +511,31 @@ scheduler.add_job(
 
 def load_ai_config():
     default = {
-        'service': 'ollama',
-        'ollama': {'url': 'http://localhost:11434', 'model': 'qwen2.5-coder:3b'},
-        'openai': {'key': '', 'model': 'gpt-4-turbo', 'base_url': 'https://api.openai.com/v1'},
-        'deepseek': {'key': '', 'model': 'deepseek-coder-33b-instruct', 'base_url': 'https://api.deepseek.com/v1'},
-        'claude': {'key': '', 'model': 'claude-3-opus-20240229', 'base_url': 'https://api.anthropic.com/v1'},
-        'parameters': {'temperature': 1.0, 'num_ctx': 8192},
-        'prompts': {
-            'main_analysis': """Analyze the provided code diff for security fixes.
-
-Instructions:
-1. Your answer MUST strictly follow the answer format outlined below.
-2. Always include the vulnerability name if one exists.
-3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.
-4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.
-
-Answer Format for Each Vulnerability:
-    Vulnerability Existed: [yes/no/not sure]
-    [Vulnerability Name] [File] [Lines]
-    [Old Code]
-    [Fixed Code]
-
-Additional Details:
-    File: {file_path}
-    Diff Content:
-    {diff_content}""",
-            'cve_analysis': """Analysis:
-{ai_response}
-
-Question: Do any of the vulnerabilities identified in the analysis match the description?
-Reply strictly in this format: 'Description Matches: Yes/No' 
-
-Description:
-{cve_description}"""
-        }
+        'service': DEFAULT_AI_SERVICE,
+        'ollama': {
+            'url': AI_SERVICE_CONFIGS['ollama']['url'],
+            'model': AI_SERVICE_CONFIGS['ollama']['model']
+        },
+        'openai': {
+            'key': '',
+            'model': AI_SERVICE_CONFIGS['openai']['model'],
+            'base_url': AI_SERVICE_CONFIGS['openai']['base_url']
+        },
+        'deepseek': {
+            'key': '',
+            'model': AI_SERVICE_CONFIGS['deepseek']['model'],
+            'base_url': AI_SERVICE_CONFIGS['deepseek']['base_url']
+        },
+        'claude': {
+            'key': '',
+            'model': AI_SERVICE_CONFIGS['claude']['model'],
+            'base_url': AI_SERVICE_CONFIGS['claude']['base_url']
+        },
+        'parameters': {
+            'temperature': DEFAULT_TEMPERATURE,
+            'num_ctx': DEFAULT_CONTEXT_SIZE
+        },
+        'prompts': DEFAULT_PROMPTS.copy()
     }
     
     config = load_json_safe(AI_CONFIG_FILE, default)
@@ -514,88 +559,139 @@ Description:
     
     return config
 
-@cached(ai_cache)
+class AIServiceClient:
+    
+    def __init__(self, config):
+        self.config = config
+        self.service = config.get('service', DEFAULT_AI_SERVICE)
+        self.timeout = DEFAULT_TIMEOUT
+        self.max_retries = MAX_RETRY_ATTEMPTS
+    
+    def _get_ollama_request(self, prompt, temperature, max_tokens):
+        return {
+            'url': f"{self.config['ollama']['url']}{AI_SERVICE_CONFIGS['ollama']['endpoint']}",
+            'json': {
+                'model': self.config['ollama']['model'],
+                'prompt': prompt,
+                'stream': False,
+                'options': {
+                    'temperature': temperature,
+                    'num_ctx': max_tokens
+                }
+            },
+            'timeout': self.timeout
+        }
+    
+    def _get_openai_request(self, prompt, temperature, max_tokens):
+        return {
+            'url': f"{self.config['openai']['base_url']}{AI_SERVICE_CONFIGS['openai']['endpoint']}",
+            'headers': {'Authorization': f"Bearer {self.config['openai']['key']}"},
+            'json': {
+                'model': self.config['openai']['model'],
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': temperature,
+                'max_tokens': max_tokens
+            },
+            'timeout': self.timeout
+        }
+    
+    def _get_deepseek_request(self, prompt, temperature, max_tokens):
+        return {
+            'url': f"{self.config['deepseek']['base_url']}{AI_SERVICE_CONFIGS['deepseek']['endpoint']}",
+            'headers': {'Authorization': f"Bearer {self.config['deepseek']['key']}"},
+            'json': {
+                'model': self.config['deepseek']['model'],
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': temperature,
+                'max_tokens': max_tokens
+            },
+            'timeout': self.timeout
+        }
+    
+    def _get_claude_request(self, prompt, temperature, max_tokens):
+        return {
+            'url': f"{self.config['claude']['base_url']}{AI_SERVICE_CONFIGS['claude']['endpoint']}",
+            'headers': {
+                'x-api-key': self.config['claude']['key'],
+                'anthropic-version': AI_SERVICE_CONFIGS['claude']['version']
+            },
+            'json': {
+                'model': self.config['claude']['model'],
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+                'messages': [{'role': 'user', 'content': prompt}]
+            },
+            'timeout': self.timeout
+        }
+    
+    def _parse_response(self, response, service):
+        if not response.ok:
+            return f"Error: {response.text}"
+        
+        try:
+            if service == 'ollama':
+                return response.json().get('response', 'No AI response')
+            elif service in ['openai', 'deepseek']:
+                return response.json()['choices'][0]['message']['content']
+            elif service == 'claude':
+                return response.json()['content'][0]['text']
+            else:
+                return "Unsupported AI service"
+        except (KeyError, IndexError, ValueError) as e:
+            return f"Error parsing response: {str(e)}"
+    
+    def _handle_rate_limiting(self, response, retry_count):
+        if response.status_code == HTTP_RATE_LIMITED:
+            backoff_time = min(RATE_LIMIT_BACKOFF_BASE ** retry_count, MAX_BACKOFF_TIME)
+            time.sleep(backoff_time)
+            return True
+        return False
+    
+    def generate_response(self, prompt):
+        temperature = self.config['parameters']['temperature']
+        max_tokens = self.config['parameters']['num_ctx']
+        
+        for retry_count in range(self.max_retries):
+            try:
+                if self.service == 'ollama':
+                    request_data = self._get_ollama_request(prompt, temperature, max_tokens)
+                elif self.service == 'openai':
+                    request_data = self._get_openai_request(prompt, temperature, max_tokens)
+                elif self.service == 'deepseek':
+                    request_data = self._get_deepseek_request(prompt, temperature, max_tokens)
+                elif self.service == 'claude':
+                    request_data = self._get_claude_request(prompt, temperature, max_tokens)
+                else:
+                    return "Invalid AI service configuration"
+                
+                response = requests.post(**request_data)
+                
+                if self._handle_rate_limiting(response, retry_count):
+                    continue
+                
+                return self._parse_response(response, self.service)
+                
+            except requests.exceptions.RequestException as e:
+                if retry_count == self.max_retries - 1:
+                    return f"Connection failed: {str(e)}"
+                time.sleep(min(RATE_LIMIT_BACKOFF_BASE ** retry_count, MAX_BACKOFF_TIME))
+            except Exception as e:
+                return f"Unexpected error: {str(e)}"
+        
+        return "Maximum retry attempts exceeded"
+
 def get_ai_analysis(file_path, diff_content):
     config = load_ai_config()
     prompt = config['prompts']['main_analysis'].format(file_path=file_path, diff_content=diff_content)
     
-    retry_count = 0
-    while retry_count < 3:
-        try:
-            if config['service'] == 'ollama':
-                response = requests.post(
-                    f"{config['ollama']['url']}/api/generate",
-                    json={
-                        'model': config['ollama']['model'],
-                        'prompt': prompt,
-                        'stream': False,
-                        'options': {'temperature': config['parameters']['temperature'], 'num_ctx': config['parameters']['num_ctx']}
-                    },
-                    timeout=999999
-                )
-            elif config['service'] == 'openai':
-                response = requests.post(
-                    f"{config['openai']['base_url']}/chat/completions",
-                    headers={'Authorization': f"Bearer {config['openai']['key']}"},
-                    json={
-                        'model': config['openai']['model'],
-                        'messages': [{'role': 'user', 'content': prompt}],
-                        'temperature': config['parameters']['temperature'],
-                        'max_tokens': config['parameters']['num_ctx']
-                    },
-                    timeout=999999
-                )
-            elif config['service'] == 'deepseek':
-                response = requests.post(
-                    f"{config['deepseek']['base_url']}/chat/completions",
-                    headers={'Authorization': f"Bearer {config['deepseek']['key']}"},
-                    json={
-                        'model': config['deepseek']['model'],
-                        'messages': [{'role': 'user', 'content': prompt}],
-                        'temperature': config['parameters']['temperature'],
-                        'max_tokens': config['parameters']['num_ctx']
-                    },
-                    timeout=999999
-                )
-            elif config['service'] == 'claude':
-                response = requests.post(
-                    f"{config['claude']['base_url']}/messages",
-                    headers={'x-api-key': config['claude']['key'], 'anthropic-version': '2023-06-01'},
-                    json={
-                        'model': config['claude']['model'],
-                        'max_tokens': config['parameters']['num_ctx'],
-                        'temperature': config['parameters']['temperature'],
-                        'messages': [{'role': 'user', 'content': prompt}]
-                    },
-                    timeout=999999
-                )
-            else:
-                return "Invalid AI service configuration"
-            
-            if response.status_code == 429:
-                retry_count += 1
-                time.sleep(min(2 ** retry_count, 60))
-                continue
-            
-            if config['service'] == 'ollama':
-                return response.json().get('response', 'No AI response') if response.ok else f"Error: {response.text}"
-            elif config['service'] in ['openai', 'deepseek']:
-                return response.json()['choices'][0]['message']['content'] if response.ok else f"Error: {response.text}"
-            elif config['service'] == 'claude':
-                return response.json()['content'][0]['text'] if response.ok else f"Error: {response.text}"
-                
-        except Exception as e:
-            if hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 429:
-                retry_count += 1
-                time.sleep(min(2 ** retry_count, 60))
-                continue
-            return f"Connection failed: {str(e)}"
+    client = AIServiceClient(config)
+    return client.generate_response(prompt)
 
 def get_cve_description(cve_id):
     try:
         url = f"https://nvd.nist.gov/vuln/detail/{cve_id}"
-        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0"}
-        response = requests.get(url, timeout=60, headers=headers)
+        headers = {"User-Agent": USER_AGENT}
+        response = requests.get(url, timeout=CVE_FETCH_TIMEOUT, headers=headers)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         description_tag = soup.find('p', {'data-testid': 'vuln-description'})
@@ -607,78 +703,8 @@ def analyze_with_cve(ai_response, cve_description):
     config = load_ai_config()
     analysis_prompt = config['prompts']['cve_analysis'].format(ai_response=ai_response, cve_description=cve_description)
     
-    retry_count = 0
-    while retry_count < 3:
-        try:
-            config = load_ai_config()
-            if config['service'] == 'ollama':
-                response = requests.post(
-                    f"{config['ollama']['url']}/api/generate",
-                    json={
-                        'model': config['ollama']['model'],
-                        'prompt': analysis_prompt,
-                        'stream': False,
-                        'options': {'temperature': config['parameters']['temperature'], 'num_ctx': config['parameters']['num_ctx']}
-                    },
-                    timeout=999999
-                )
-            elif config['service'] == 'openai':
-                response = requests.post(
-                    f"{config['openai']['base_url']}/chat/completions",
-                    headers={'Authorization': f"Bearer {config['openai']['key']}"},
-                    json={
-                        'model': config['openai']['model'],
-                        'messages': [{'role': 'user', 'content': analysis_prompt}],
-                        'temperature': config['parameters']['temperature'],
-                        'max_tokens': config['parameters']['num_ctx']
-                    },
-                    timeout=999999
-                )
-            elif config['service'] == 'deepseek':
-                response = requests.post(
-                    f"{config['deepseek']['base_url']}/chat/completions",
-                    headers={'Authorization': f"Bearer {config['deepseek']['key']}"},
-                    json={
-                        'model': config['deepseek']['model'],
-                        'messages': [{'role': 'user', 'content': analysis_prompt}],
-                        'temperature': config['parameters']['temperature'],
-                        'max_tokens': config['parameters']['num_ctx']
-                    },
-                    timeout=999999
-                )
-            elif config['service'] == 'claude':
-                response = requests.post(
-                    f"{config['claude']['base_url']}/messages",
-                    headers={'x-api-key': config['claude']['key'], 'anthropic-version': '2023-06-01'},
-                    json={
-                        'model': config['claude']['model'],
-                        'max_tokens': config['parameters']['num_ctx'],
-                        'temperature': config['parameters']['temperature'],
-                        'messages': [{'role': 'user', 'content': analysis_prompt}]
-                    },
-                    timeout=999999
-                )
-            else:
-                return "CVE analysis failed: Unsupported AI service"
-            
-            if response.status_code == 429:
-                retry_count += 1
-                time.sleep(min(2 ** retry_count, 60))
-                continue
-            
-            if config['service'] == 'ollama':
-                return response.json().get('response', 'No AI response') if response.ok else f"Error: {response.text}"
-            elif config['service'] in ['openai', 'deepseek']:
-                return response.json()['choices'][0]['message']['content'] if response.ok else f"Error: {response.text}"
-            elif config['service'] == 'claude':
-                return response.json()['content'][0]['text'] if response.ok else f"Error: {response.text}"
-                
-        except Exception as e:
-            if hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 429:
-                retry_count += 1
-                time.sleep(min(2 ** retry_count, 60))
-                continue
-            return f"CVE analysis error: {str(e)}"
+    client = AIServiceClient(config)
+    return client.generate_response(analysis_prompt)
 
 def extract_context(diff_lines, match_indices, context=15):
     intervals = []
@@ -719,7 +745,7 @@ def read_file(file_path):
                 real_path.startswith(os.path.realpath(SAVED_ANALYSES_DIR))):
             return []
         
-        if os.path.getsize(file_path) > 10 * 1024 * 1024:
+        if os.path.getsize(file_path) > MAX_FILE_SIZE:
             return []
         
         with open(file_path, "r", encoding="utf-8") as file:
@@ -728,15 +754,10 @@ def read_file(file_path):
         app.logger.warning(f"Error reading {file_path}: {e}")
         return []
 
-def save_diff(file_path, diff, output_file):
-    with open(output_file, "a", encoding="utf-8") as f:
-        f.write(f"{file_path}\n")
-        f.write("=" * 8 + "\n")
-        f.writelines(diff)
-        f.write("=" * 9 + "\n\n")
+
 
 def compare_single_file(file_info):
-    file, old_folder, new_folder, ext_filter, manual_keywords = file_info
+    file, old_folder, new_folder, ext_filter, manual_keywords, file_type = file_info
     
     if not validate_filename(file):
         return None
@@ -745,29 +766,67 @@ def compare_single_file(file_info):
     new_path = os.path.join(new_folder, file)
     
     try:
-        if not (os.path.exists(old_path) and os.path.exists(new_path)):
-            return None
-        
-        old_code = read_file(old_path)
-        new_code = read_file(new_path)
-        
-        if not old_code or not new_code:
-            return None
-        
-        diff = list(difflib.unified_diff(old_code, new_code, fromfile=old_path, tofile=new_path, lineterm="\n"))
-        
-        if not diff:
-            return None
+        if file_type == 'deleted':
+            if not os.path.exists(old_path):
+                return None
             
-        save_special = False
-        if manual_keywords:
-            keywords = [validate_input(k.strip(), 50) for k in manual_keywords if k.strip()]
-            keywords = [k for k in keywords if k]
-            save_special = any(any(k in line for k in keywords) for line in diff)
-        else:
+            old_code = read_file(old_path)
+            if not old_code:
+                return None
+            
+            diff = [f"--- {old_path}\n", f"+++ /dev/null\n", "@@ -1,{len(old_code)} +0,0 @@\n"]
+            diff.extend([f"-{line}" for line in old_code])
+            
             save_special = True
+            if manual_keywords:
+                keywords = [validate_input(k.strip(), 50) for k in manual_keywords if k.strip()]
+                keywords = [k for k in keywords if k]
+                save_special = any(any(k in line for k in keywords) for line in old_code)
             
-        return {'file': file, 'diff': diff, 'save_special': save_special}
+            return {'file': file, 'diff': diff, 'save_special': save_special, 'type': 'deleted'}
+            
+        elif file_type == 'added':
+            if not os.path.exists(new_path):
+                return None
+            
+            new_code = read_file(new_path)
+            if not new_code:
+                return None
+            
+            diff = [f"--- /dev/null\n", f"+++ {new_path}\n", f"@@ -0,0 +1,{len(new_code)} @@\n"]
+            diff.extend([f"+{line}" for line in new_code])
+            
+            save_special = True
+            if manual_keywords:
+                keywords = [validate_input(k.strip(), 50) for k in manual_keywords if k.strip()]
+                keywords = [k for k in keywords if k]
+                save_special = any(any(k in line for k in keywords) for line in new_code)
+            
+            return {'file': file, 'diff': diff, 'save_special': save_special, 'type': 'added'}
+            
+        else:
+            if not (os.path.exists(old_path) and os.path.exists(new_path)):
+                return None
+            
+            old_code = read_file(old_path)
+            new_code = read_file(new_path)
+            
+            if not old_code or not new_code:
+                return None
+            
+            diff = list(difflib.unified_diff(old_code, new_code, fromfile=old_path, tofile=new_path, lineterm="\n"))
+            
+            if not diff:
+                return None
+                
+            save_special = True
+            if manual_keywords:
+                keywords = [validate_input(k.strip(), 50) for k in manual_keywords if k.strip()]
+                keywords = [k for k in keywords if k]
+                save_special = any(any(k in line for k in keywords) for line in diff)
+            
+            return {'file': file, 'diff': diff, 'save_special': save_special, 'type': 'modified'}
+            
     except Exception as e:
         app.logger.warning(f"Error comparing file {file}: {str(e)}")
         return None
@@ -797,8 +856,12 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
         old_files = get_files(old_folder)
         new_files = get_files(new_folder)
         common_files = old_files & new_files
+        deleted_files = old_files - new_files
+        added_files = new_files - old_files
         
-        app.logger.info(f"compare_folders: old_files={len(old_files)}, new_files={len(new_files)}, common_files={len(common_files)}")
+        app.logger.info(f"compare_folders: old_files={len(old_files)}, new_files={len(new_files)}, common_files={len(common_files)}, deleted_files={len(deleted_files)}, added_files={len(added_files)}")
+        
+        all_files_to_process = []
         
         if ext_filter:
             extensions = [ext.strip() for ext in ext_filter.split(',') if ext.strip()]
@@ -812,22 +875,46 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
                     normalized_extensions.append(ext.lower())
             
             if normalized_extensions:
-                filtered_files = set()
+                filtered_common = set()
+                filtered_deleted = set()
+                filtered_added = set()
+                
                 for file in common_files:
                     file_extension = os.path.splitext(file)[1].lower()
                     if file_extension in normalized_extensions:
-                        filtered_files.add(file)
-                common_files = filtered_files
-                app.logger.info(f"Extension filter applied: {len(common_files)} files match extensions {ext_filter}")
+                        filtered_common.add(file)
+                
+                for file in deleted_files:
+                    file_extension = os.path.splitext(file)[1].lower()
+                    if file_extension in normalized_extensions:
+                        filtered_deleted.add(file)
+                
+                for file in added_files:
+                    file_extension = os.path.splitext(file)[1].lower()
+                    if file_extension in normalized_extensions:
+                        filtered_added.add(file)
+                
+                common_files = filtered_common
+                deleted_files = filtered_deleted
+                added_files = filtered_added
+                
+                app.logger.info(f"Extension filter applied: common={len(common_files)}, deleted={len(deleted_files)}, added={len(added_files)} files match extensions {ext_filter}")
 
+        for file in common_files:
+            all_files_to_process.append((file, old_folder, new_folder, ext_filter, manual_keywords, 'modified'))
         
-        file_tasks = [(file, old_folder, new_folder, ext_filter, manual_keywords) for file in common_files]
-        max_workers = min(32, len(file_tasks))
+        for file in deleted_files:
+            all_files_to_process.append((file, old_folder, new_folder, ext_filter, manual_keywords, 'deleted'))
         
-        app.logger.info(f"compare_folders: processing {len(file_tasks)} files with {max_workers} workers")
+        for file in added_files:
+            all_files_to_process.append((file, old_folder, new_folder, ext_filter, manual_keywords, 'added'))
+        
+        max_workers = min(32, len(all_files_to_process))
+        
+        app.logger.info(f"compare_folders: processing {len(all_files_to_process)} files with {max_workers} workers")
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_file = {executor.submit(compare_single_file, task): task[0] for task in file_tasks}
+            future_to_file = {executor.submit(compare_single_file, task): task[0] for task in all_files_to_process}
             
             files_with_diffs = 0
             files_with_keywords = 0
@@ -837,7 +924,7 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
                 if result:
                     files_with_diffs += 1
                     with open(diff_file, "a", encoding="utf-8") as f:
-                        f.write(f"{result['file']}\n")
+                        f.write(f"{result['file']} ({result.get('type', 'modified')})\n")
                         f.write("=" * 8 + "\n")
                         f.writelines(result['diff'])
                         f.write("=" * 9 + "\n\n")
@@ -845,7 +932,7 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
                     if result['save_special']:
                         files_with_keywords += 1
                         with open(special_file, "a", encoding="utf-8") as f:
-                            f.write(f"{result['file']}\n")
+                            f.write(f"{result['file']} ({result.get('type', 'modified')})\n")
                             f.write("=" * 8 + "\n")
                             f.writelines(result['diff'])
                             f.write("=" * 9 + "\n\n")
@@ -866,7 +953,7 @@ def parse_diff_file(diff_path):
         return diffs
     
     try:
-        if os.path.getsize(diff_path) > 100 * 1024 * 1024:
+        if os.path.getsize(diff_path) > MAX_DIFF_FILE_SIZE:
             app.logger.warning(f"Diff file too large: {diff_path}")
             return diffs
     except OSError:
@@ -885,7 +972,14 @@ def parse_diff_file(diff_path):
             i += 1
             continue
         
-        filename = lines[i].rstrip("\n")
+        filename_line = lines[i].rstrip("\n")
+        
+        filename = filename_line
+        file_type = 'modified'
+        
+        if ' (' in filename_line and filename_line.endswith(')'):
+            filename = filename_line.rsplit(' (', 1)[0]
+            file_type = filename_line.rsplit(' (', 1)[1].rstrip(')')
         
         if not validate_filename(filename):
             i += 1
@@ -906,7 +1000,7 @@ def parse_diff_file(diff_path):
         while i < len(lines) and lines[i].strip() == "":
             i += 1
         
-        diffs.append({'filename': filename, 'diff': diff_lines})
+        diffs.append({'filename': filename, 'diff': diff_lines, 'type': file_type})
     
     return diffs
 
@@ -928,7 +1022,7 @@ def analyze_diffs_with_keywords(diffs, manual_keywords):
         if not validate_filename(filename):
             continue
         
-        if manual_keywords:
+        if manual_keywords and len(manual_keywords) > 0:
             match_indices = [i for i, line in enumerate(diff_lines) if any(keyword in line for keyword in manual_keywords)]
         else:
             match_indices = list(range(len(diff_lines)))
@@ -951,12 +1045,12 @@ def get_github_versions(repo_url):
             return []
         
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+            'User-Agent': USER_AGENT,
             'X-Requested-With': 'XMLHttpRequest'
         }
         
         url = f"{repo_url}/refs?tag_name=&experimental=1"
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=CVE_FETCH_TIMEOUT)
         response.raise_for_status()
         
         data = response.json()
@@ -973,7 +1067,6 @@ def get_github_versions(repo_url):
                         versions.append(version)
         
         versions = list(dict.fromkeys(versions))
-        
         
         def sort_key(version):
             clean_version = version.lstrip('v')
@@ -1046,6 +1139,8 @@ def process_ai_analysis(analyzed_results, diffs, cve_ids):
     
     return analyzed_results
 
+
+
 @app.route('/save-analysis', methods=['POST'])
 @limiter.limit("10 per minute")
 @requires_basic_auth
@@ -1116,11 +1211,11 @@ def view_analysis(analysis_id):
         
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
-        filter_type = request.args.get('filter', 'all')  # all, cve, vuln
-        search_term = request.args.get('search', '').strip().lower()  # search term
+        filter_type = request.args.get('filter', 'all')
+        search_term = request.args.get('search', '').strip().lower()
         
         page = max(1, page)
-        per_page = max(5, min(100, per_page))  # Between 5 and 100 items per page
+        per_page = max(5, min(100, per_page))
         
         try:
             page = int(page)
@@ -1354,40 +1449,31 @@ def reset_prompts():
         config = load_ai_config()
         
         default_config = {
-            'service': 'ollama',
-            'ollama': {'url': 'http://localhost:11434', 'model': 'qwen2.5-coder:3b'},
-            'openai': {'key': '', 'model': 'gpt-4-turbo', 'base_url': 'https://api.openai.com/v1'},
-            'deepseek': {'key': '', 'model': 'deepseek-coder-33b-instruct', 'base_url': 'https://api.deepseek.com/v1'},
-            'claude': {'key': '', 'model': 'claude-3-opus-20240229', 'base_url': 'https://api.anthropic.com/v1'},
-            'parameters': {'temperature': 1.0, 'num_ctx': 8192},
-            'prompts': {
-                'main_analysis': """Analyze the provided code diff for security fixes.
-
-Instructions:
-1. Your answer MUST strictly follow the answer format outlined below.
-2. Always include the vulnerability name if one exists.
-3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.
-4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.
-
-Answer Format for Each Vulnerability:
-    Vulnerability Existed: [yes/no/not sure]
-    [Vulnerability Name] [File] [Lines]
-    [Old Code]
-    [Fixed Code]
-
-Additional Details:
-    File: {file_path}
-    Diff Content:
-    {diff_content}""",
-                'cve_analysis': """Analysis:
-{ai_response}
-
-Question: Do any of the vulnerabilities identified in the analysis match the description?
-Reply strictly in this format: 'Description Matches: Yes/No' 
-
-Description:
-{cve_description}"""
-            }
+            'service': DEFAULT_AI_SERVICE,
+            'ollama': {
+                'url': AI_SERVICE_CONFIGS['ollama']['url'],
+                'model': AI_SERVICE_CONFIGS['ollama']['model']
+            },
+            'openai': {
+                'key': '',
+                'model': AI_SERVICE_CONFIGS['openai']['model'],
+                'base_url': AI_SERVICE_CONFIGS['openai']['base_url']
+            },
+            'deepseek': {
+                'key': '',
+                'model': AI_SERVICE_CONFIGS['deepseek']['model'],
+                'base_url': AI_SERVICE_CONFIGS['deepseek']['base_url']
+            },
+            'claude': {
+                'key': '',
+                'model': AI_SERVICE_CONFIGS['claude']['model'],
+                'base_url': AI_SERVICE_CONFIGS['claude']['base_url']
+            },
+            'parameters': {
+                'temperature': DEFAULT_TEMPERATURE,
+                'num_ctx': DEFAULT_CONTEXT_SIZE
+            },
+            'prompts': DEFAULT_PROMPTS.copy()
         }
         
         config['prompts'] = default_config['prompts']
@@ -1473,7 +1559,7 @@ def run_ai_benchmark(benchmark_id, benchmark_data):
                         'response_time': response_time,
                         'response_length': response_length,
                         'accuracy_score': accuracy_score,
-                        'accuracy_binary': accuracy_score > 0.7,  # Consider >70% as "correct"
+                        'accuracy_binary': accuracy_score > 0.7,
                         'judge_ai': judge_ai
                     }
                     
@@ -1522,13 +1608,12 @@ def get_ai_response(question, ai_config):
         service = ai_config.get('service', 'openai')
         
         if ai_config.get('demo_mode', False):
-            time.sleep(0.5)  # Simulate short response time
+            time.sleep(0.5)
             return f"Mock response for: {question[:50]}..."
         
-        timeout = 60  # Increased from 15 to 60 seconds
-        
-        temperature = ai_config.get('temperature', 0.7)
-        max_tokens = ai_config.get('max_tokens', 1000)
+        timeout = DEFAULT_TIMEOUT
+        temperature = ai_config.get('temperature', DEFAULT_TEMPERATURE)
+        max_tokens = ai_config.get('max_tokens', DEFAULT_MAX_TOKENS)
         
         if service == 'ollama':
             response = requests.post(
@@ -1549,7 +1634,7 @@ def get_ai_response(question, ai_config):
         elif service == 'openai':
             headers = {'Authorization': f"Bearer {ai_config['key']}"}
             if 'base_url' not in ai_config:
-                ai_config['base_url'] = 'https://api.openai.com/v1'
+                ai_config['base_url'] = AI_SERVICE_CONFIGS['openai']['base_url']
                 
             response = requests.post(
                 f"{ai_config['base_url']}/chat/completions",
@@ -1567,7 +1652,7 @@ def get_ai_response(question, ai_config):
         elif service == 'deepseek':
             headers = {'Authorization': f"Bearer {ai_config['key']}"}
             if 'base_url' not in ai_config:
-                ai_config['base_url'] = 'https://api.deepseek.com/v1'
+                ai_config['base_url'] = AI_SERVICE_CONFIGS['deepseek']['base_url']
                 
             response = requests.post(
                 f"{ai_config['base_url']}/chat/completions",
@@ -1583,9 +1668,9 @@ def get_ai_response(question, ai_config):
             return response.json()['choices'][0]['message']['content'] if response.ok else f"Error: {response.text}"
             
         elif service == 'claude':
-            headers = {'x-api-key': ai_config['key'], 'anthropic-version': '2023-06-01'}
+            headers = {'x-api-key': ai_config['key'], 'anthropic-version': AI_SERVICE_CONFIGS['claude']['version']}
             if 'base_url' not in ai_config:
-                ai_config['base_url'] = 'https://api.anthropic.com/v1'
+                ai_config['base_url'] = AI_SERVICE_CONFIGS['claude']['base_url']
                 
             response = requests.post(
                 f"{ai_config['base_url']}/messages",
@@ -1655,7 +1740,7 @@ Respond with only the numeric score (e.g., 0.85):"""
         judgment = get_ai_response(judge_prompt, judge_config)
         
         score = extract_numeric_score(judgment)
-        return min(max(score, 0.0), 1.0)  # Clamp between 0.0 and 1.0
+        return min(max(score, 0.0), 1.0)
         
     except Exception as e:
         app.logger.error(f"Error with AI judge evaluation: {str(e)}")
@@ -1678,7 +1763,7 @@ def evaluate_with_heuristics(ai_response, expected_answer):
         
         final_score = (base_score * 0.7) + (length_ratio * 0.3)
         
-        return min(max(final_score, 0.0), 1.0)  # Clamp between 0.0 and 1.0
+        return min(max(final_score, 0.0), 1.0)
         
     except Exception as e:
         app.logger.error(f"Error in heuristic evaluation: {str(e)}")
@@ -1686,7 +1771,7 @@ def evaluate_with_heuristics(ai_response, expected_answer):
 
 def get_judge_ai_config(judge_ai, config):
     if judge_ai == 'current':
-        service = config.get('service', 'ollama')
+        service = config.get('service', DEFAULT_AI_SERVICE)
         if service in config:
             judge_config = config[service].copy()
             judge_config['service'] = service
@@ -1945,6 +2030,7 @@ def run_analysis_background(analysis_id, params, mode):
             if enable_ai == 'on' and analyzed_results:
                 analyzed_results = process_ai_analysis(analyzed_results, diffs, cve_ids)
         
+        # Update analysis record
         with open(analysis_path, 'r') as f:
             analysis_data = json.load(f)
         analysis_data['meta']['status'] = 'completed'
@@ -2202,4 +2288,4 @@ if __name__ == '__main__':
         with open(os.path.join(PRODUCTS_DIR, 'magento.json'), 'w') as f:
             json.dump([], f)
     
-    app.run(host="127.0.0.1", port=80, debug=False)
+    app.run(host=DEFAULT_HOST, port=DEFAULT_PORT, debug=False)
