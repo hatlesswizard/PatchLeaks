@@ -53,16 +53,13 @@ if not app.debug:
     app.logger.setLevel(logging.INFO)
     app.logger.info('PatchLeaks startup')
 
-# Basic Authentication Configuration
 BASIC_AUTH_USERNAME = os.environ.get('BASIC_AUTH_USERNAME', '4ba86d22361ad4dc8728097f0aac85d1')
 BASIC_AUTH_PASSWORD = os.environ.get('BASIC_AUTH_PASSWORD', '07f88d7227784a3bcbb8d14f9cdd57c5')
 
 def check_basic_auth(username, password):
-    """Check if username and password are valid."""
     return username == BASIC_AUTH_USERNAME and password == BASIC_AUTH_PASSWORD
 
 def requires_basic_auth(f):
-    """Decorator that requires basic authentication."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         auth = request.authorization
@@ -74,7 +71,6 @@ def requires_basic_auth(f):
     return decorated_function
 
 def conditional_auth(methods_to_protect):
-    """Decorator that applies basic auth only to specified HTTP methods."""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -88,7 +84,6 @@ def conditional_auth(methods_to_protect):
         return decorated_function
     return decorator
 
-ALLOWED_EXTENSIONS = frozenset(['.txt', '.py', '.js', '.html', '.css', '.json', '.md', '.xml', '.yaml', '.yml', '.php', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.rb', '.sql', '.sh', '.bat', '.tsx', '.ts', '.vue', '.jsx'])
 VALID_AI_SERVICES = frozenset(['ollama', 'openai', 'deepseek', 'claude'])
 VALID_SOURCES = frozenset(['library_auto', 'products', 'folder', 'direct'])
 
@@ -121,7 +116,7 @@ def get_safe_path(base_dir, user_path):
         return None
 
 def is_allowed_file(filename):
-    return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
+    return True
 
 def validate_input(input_str, max_length=1000, pattern=None):
     if not input_str:
@@ -134,10 +129,8 @@ def validate_input(input_str, max_length=1000, pattern=None):
     return clean_input.strip()
 
 def validate_prompt(prompt_str, max_length=5000):
-    """Validate prompt text while preserving newlines and formatting."""
     if not prompt_str:
         return ""
-    # Only remove null bytes and other dangerous control characters, but keep newlines and tabs
     clean_prompt = re.sub(r'[\x00\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', str(prompt_str))
     if len(clean_prompt) > max_length:
         clean_prompt = clean_prompt[:max_length]
@@ -162,7 +155,7 @@ def validate_version(version):
 def validate_filename(filename):
     if not filename:
         return False
-    return '..' not in filename and not filename.startswith('/') and ':' not in filename and is_allowed_file(filename) and len(filename) <= 255
+    return '..' not in filename and not filename.startswith('/') and ':' not in filename and len(filename) <= 255
 
 def validate_uuid(uuid_str):
     try:
@@ -290,7 +283,7 @@ def trigger_auto_analysis(repo, old_version, new_version):
             'old_version': old_version,
             'new_version': new_version,
             'ai_service': validate_input(repo.get('ai_service', 'ollama'), 50),
-            'extension': '',
+            'extension': None,
             'enable_ai': 'on',
             'special_keywords': 'security,vulnerability,fix,patch,cve,exploit,auth,password,sql,xss,csrf',
             'cve_ids': ''
@@ -306,13 +299,11 @@ def create_new_analysis_record(params, source, ai_enabled):
     analysis_id = str(uuid.uuid4())
     source = source if source in VALID_SOURCES else 'direct'
     
-    # Get AI configuration if AI is enabled
     ai_service = None
     ai_model = None
     if ai_enabled:
         config = load_ai_config()
         ai_service = config.get('service', 'ollama')
-        # Get the model from the appropriate service config
         if ai_service in config:
             ai_model = config[ai_service].get('model', 'Unknown')
     
@@ -348,9 +339,20 @@ def run_library_analysis_background(analysis_id, params):
         old_ver = params['old_version']
         new_ver = params['new_version']
 
+        products_data = load_json_safe(PRODUCTS_FILE, {})
+        
         product_name = repo_name.lower().replace('.', '').replace(' ', '').replace('-', '').replace('_', '')
+        
+        if repo_name in products_data:
+            product_name = repo_name
+            app.logger.info(f"Found {repo_name} in products file, using exact name")
+        else:
+            app.logger.info(f"Using transformed product_name: {product_name} for repo: {repo_name}")
+        
         download_dir = os.path.join(PRODUCTS_DIR, f"{product_name}_downloads")
         product_versions_file = os.path.join(PRODUCTS_DIR, f"{product_name}.json")
+        
+        app.logger.info(f"Library analysis using product_name: {product_name}, repo_name: {repo_name}")
         os.makedirs(download_dir, exist_ok=True)
 
         versions = load_json_safe(product_versions_file, [])
@@ -381,18 +383,26 @@ def run_library_analysis_background(analysis_id, params):
                         'timestamp': datetime.now().isoformat()
                     })
                 except Exception as e:
-                    return
+                    app.logger.error(f"Failed to download version {ver} for {repo_name}: {str(e)}")
+                    continue
 
         save_json_safe(product_versions_file, versions)
 
-        old_path = next(v['path'] for v in versions if v['version'] == old_ver)
-        new_path = next(v['path'] for v in versions if v['version'] == new_ver)
+        try:
+            old_path = next(v['path'] for v in versions if v['version'] == old_ver)
+            new_path = next(v['path'] for v in versions if v['version'] == new_ver)
+        except StopIteration:
+            app.logger.error(f"Could not find downloaded versions for {repo_name}. Available versions: {[v['version'] for v in versions]}")
+            raise Exception(f"Required versions {old_ver} and/or {new_ver} not found in downloaded versions")
 
+        app.logger.info(f"Starting folder comparison for {repo_name}: {old_path} -> {new_path}")
         compare_folders(old_path, new_path, params.get('extension'), 
                        params['special_keywords'].split(',') if params['special_keywords'] else None)
         diffs = parse_diff_file("special.txt")
+        app.logger.info(f"Found {len(diffs)} diff files for {repo_name}")
         analyzed_results = analyze_diffs_with_keywords(diffs, 
                                                      params['special_keywords'].split(',') if params['special_keywords'] else None)
+        app.logger.info(f"Analyzed {len(analyzed_results)} files with keywords for {repo_name}")
 
         if params['enable_ai'] == 'on' and analyzed_results:
             original_config = load_ai_config()
@@ -414,7 +424,6 @@ def run_library_analysis_background(analysis_id, params):
         analysis_data['meta']['status'] = 'completed'
         analysis_data['results'] = analyzed_results
         
-        # Update AI service and model information if AI was used
         if params['enable_ai'] == 'on':
             config = load_ai_config()
             ai_service = params.get('ai_service', config.get('service', 'ollama'))
@@ -496,7 +505,6 @@ Description:
                 if key not in config[service] or config[service][key] is None:
                     config[service][key] = value
     
-    # Ensure prompts section exists
     if 'prompts' not in config:
         config['prompts'] = default['prompts']
     else:
@@ -733,8 +741,6 @@ def compare_single_file(file_info):
     if not validate_filename(file):
         return None
     
-    # Extension filtering is now done earlier in compare_folders, so we can remove it from here
-    
     old_path = os.path.join(old_folder, file)
     new_path = os.path.join(new_folder, file)
     
@@ -792,22 +798,19 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
         new_files = get_files(new_folder)
         common_files = old_files & new_files
         
-        # Apply extension filter BEFORE file count check
+        app.logger.info(f"compare_folders: old_files={len(old_files)}, new_files={len(new_files)}, common_files={len(common_files)}")
+        
         if ext_filter:
-            # Parse comma-separated extensions
             extensions = [ext.strip() for ext in ext_filter.split(',') if ext.strip()]
             
-            # Normalize extensions (add dot prefix if missing, convert to lowercase)
             normalized_extensions = []
             for ext in extensions:
                 ext = ext.strip()
                 if ext:
-                    # Add dot prefix if missing
                     if not ext.startswith('.'):
                         ext = '.' + ext
                     normalized_extensions.append(ext.lower())
             
-            # Filter files by extension
             if normalized_extensions:
                 filtered_files = set()
                 for file in common_files:
@@ -816,18 +819,23 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
                         filtered_files.add(file)
                 common_files = filtered_files
                 app.logger.info(f"Extension filter applied: {len(common_files)} files match extensions {ext_filter}")
-        
 
         
         file_tasks = [(file, old_folder, new_folder, ext_filter, manual_keywords) for file in common_files]
         max_workers = min(32, len(file_tasks))
         
+        app.logger.info(f"compare_folders: processing {len(file_tasks)} files with {max_workers} workers")
+        
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_file = {executor.submit(compare_single_file, task): task[0] for task in file_tasks}
+            
+            files_with_diffs = 0
+            files_with_keywords = 0
             
             for future in concurrent.futures.as_completed(future_to_file):
                 result = future.result()
                 if result:
+                    files_with_diffs += 1
                     with open(diff_file, "a", encoding="utf-8") as f:
                         f.write(f"{result['file']}\n")
                         f.write("=" * 8 + "\n")
@@ -835,11 +843,14 @@ def compare_folders(old_folder, new_folder, ext_filter=None, manual_keywords=Non
                         f.write("=" * 9 + "\n\n")
                     
                     if result['save_special']:
+                        files_with_keywords += 1
                         with open(special_file, "a", encoding="utf-8") as f:
                             f.write(f"{result['file']}\n")
                             f.write("=" * 8 + "\n")
                             f.writelines(result['diff'])
                             f.write("=" * 9 + "\n\n")
+            
+            app.logger.info(f"compare_folders: {files_with_diffs} files had differences, {files_with_keywords} files matched keywords")
         
         if os.path.exists(diff_file):
             shutil.copy2(diff_file, "diff.txt")
@@ -869,7 +880,7 @@ def parse_diff_file(diff_path):
         return diffs
     
     i = 0
-    while i < len(lines) and len(diffs) < 1000:
+    while i < len(lines):
         if lines[i].strip() == "":
             i += 1
             continue
@@ -1037,6 +1048,7 @@ def process_ai_analysis(analyzed_results, diffs, cve_ids):
 
 @app.route('/save-analysis', methods=['POST'])
 @limiter.limit("10 per minute")
+@requires_basic_auth
 def save_analysis():
     try:
         data = request.json
@@ -1047,13 +1059,11 @@ def save_analysis():
     
     analysis_id = str(uuid.uuid4())
     
-    # Get AI configuration if AI is enabled
     ai_service = None
     ai_model = None
     if data.get('enable_ai', False):
         config = load_ai_config()
         ai_service = config.get('service', 'ollama')
-        # Get the model from the appropriate service config
         if ai_service in config:
             ai_model = config[ai_service].get('model', 'Unknown')
     
@@ -1103,7 +1113,100 @@ def view_analysis(analysis_id):
             abort(404)
         
         status = analysis['meta'].get('status', 'completed')
-        return render_template("analysis.html", analysis=analysis, is_shared=True, analysis_id=analysis_id, status=status)
+        
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        filter_type = request.args.get('filter', 'all')  # all, cve, vuln
+        search_term = request.args.get('search', '').strip().lower()  # search term
+        
+        page = max(1, page)
+        per_page = max(5, min(100, per_page))  # Between 5 and 100 items per page
+        
+        try:
+            page = int(page)
+            per_page = int(per_page)
+        except (ValueError, TypeError):
+            page = 1
+            per_page = 20
+        
+        results = analysis.get('results', {})
+        filtered_results = {}
+        
+        if filter_type == 'all':
+            filtered_results = results
+        elif filter_type == 'cve':
+            for filename, result in results.items():
+                if result.get('cve_matches'):
+                    for cve_data in result['cve_matches'].values():
+                        if cve_data.get('result') == 'Yes':
+                            filtered_results[filename] = result
+                            break
+        elif filter_type == 'vuln':
+            for filename, result in results.items():
+                if result.get('vuln_severity') == 'yes':
+                    filtered_results[filename] = result
+        
+        if search_term:
+            search_filtered_results = {}
+            for filename, result in filtered_results.items():
+                ai_response = result.get('ai_response', '').lower()
+                filename_lower = filename.lower()
+                vuln_status = result.get('vulnerability_status', '').lower()
+                
+                if (search_term in ai_response or 
+                    search_term in filename_lower or 
+                    search_term in vuln_status):
+                    search_filtered_results[filename] = result
+            
+            filtered_results = search_filtered_results
+        
+        total_items = len(filtered_results)
+        total_pages = max(1, (total_items + per_page - 1) // per_page) if total_items > 0 else 1
+        
+        page = min(page, total_pages) if total_pages > 0 else 1
+        
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        
+        if filtered_results:
+            results_list = list(filtered_results.items())
+            paginated_results = dict(results_list[start_idx:end_idx])
+        else:
+            paginated_results = {}
+        
+        pagination = {
+            'page': page,
+            'per_page': per_page,
+            'filter': filter_type,
+            'search': search_term,
+            'total_items': total_items,
+            'total_pages': total_pages,
+            'has_prev': page > 1,
+            'has_next': page < total_pages,
+            'prev_page': page - 1 if page > 1 else None,
+            'next_page': page + 1 if page < total_pages else None,
+            'start_item': start_idx + 1 if total_items > 0 else 0,
+            'end_item': min(end_idx, total_items)
+        }
+        
+        if status == 'completed' and results:
+            return render_template("analysis.html", 
+                                 analysis=analysis, 
+                                 paginated_results=paginated_results,
+                                 pagination=pagination,
+                                 total_original_files=len(results),
+                                 is_shared=True, 
+                                 analysis_id=analysis_id, 
+                                 status=status)
+        else:
+            return render_template("analysis.html", 
+                                 analysis=analysis, 
+                                 paginated_results={},
+                                 pagination=None,
+                                 total_original_files=0,
+                                 is_shared=True, 
+                                 analysis_id=analysis_id, 
+                                 status=status)
     except Exception as e:
         app.logger.error(f"Error loading analysis {analysis_id}: {str(e)}")
         return render_template("error.html", message="Analysis not found"), 404
@@ -1134,6 +1237,54 @@ def delete_analysis(analysis_id):
         app.logger.error(f"Error deleting analysis {analysis_id}: {str(e)}")
         flash('Error deleting analysis.', 'danger')
     return redirect(url_for('reports'))
+
+@app.route('/delete-benchmark/<benchmark_id>', methods=['POST'])
+@requires_basic_auth
+def delete_benchmark(benchmark_id):
+    if not validate_uuid(benchmark_id):
+        return jsonify({'error': 'Invalid benchmark ID'}), 400
+    
+    try:
+        benchmark_path = os.path.join(SAVED_ANALYSES_DIR, f"benchmark_{benchmark_id}.json")
+        
+        real_path = os.path.realpath(benchmark_path)
+        if not real_path.startswith(os.path.realpath(SAVED_ANALYSES_DIR)):
+            return jsonify({'error': 'Invalid benchmark path'}), 400
+        
+        if os.path.exists(benchmark_path):
+            os.remove(benchmark_path)
+            app.logger.info(f"Benchmark {benchmark_id} deleted")
+            return jsonify({'success': True, 'message': 'Benchmark deleted successfully'})
+        else:
+            return jsonify({'error': 'Benchmark not found'}), 404
+    except Exception as e:
+        app.logger.error(f"Error deleting benchmark {benchmark_id}: {str(e)}")
+        return jsonify({'error': 'Error deleting benchmark'}), 500
+
+@app.route('/benchmark-status/<benchmark_id>')
+@requires_basic_auth
+def benchmark_status(benchmark_id):
+    if not validate_uuid(benchmark_id):
+        return jsonify({'error': 'Invalid benchmark ID'}), 400
+    
+    try:
+        benchmark_path = os.path.join(SAVED_ANALYSES_DIR, f"benchmark_{benchmark_id}.json")
+        
+        if not os.path.exists(benchmark_path):
+            return jsonify({'status': 'not_found', 'error': 'Benchmark not found'}), 404
+        
+        with open(benchmark_path, 'r') as f:
+            benchmark_data = json.load(f)
+        
+        return jsonify({
+            'status': benchmark_data.get('status', 'unknown'),
+            'progress': benchmark_data.get('progress', 0),
+            'current_test': benchmark_data.get('current_test', ''),
+            'error': benchmark_data.get('error', '')
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting benchmark status {benchmark_id}: {str(e)}")
+        return jsonify({'error': 'Error getting benchmark status'}), 500
 
 @app.route('/ai-settings', methods=['GET','POST'])
 @limiter.limit("5 per minute")
@@ -1200,10 +1351,8 @@ def ai_settings():
 @requires_basic_auth
 def reset_prompts():
     try:
-        # Load current config
         config = load_ai_config()
         
-        # Get default prompts
         default_config = {
             'service': 'ollama',
             'ollama': {'url': 'http://localhost:11434', 'model': 'qwen2.5-coder:3b'},
@@ -1241,10 +1390,8 @@ Description:
             }
         }
         
-        # Reset only the prompts section
         config['prompts'] = default_config['prompts']
         
-        # Save the updated config
         if save_json_safe(AI_CONFIG_FILE, config):
             flash('Prompts reset to default values successfully', 'success')
         else:
@@ -1255,6 +1402,356 @@ Description:
         app.logger.error(f"Error resetting prompts: {str(e)}")
         flash('Error resetting prompts', 'danger')
         return redirect(url_for('ai_settings'))
+
+def run_ai_benchmark(benchmark_id, benchmark_data):
+    try:
+        results_path = os.path.join(SAVED_ANALYSES_DIR, f"benchmark_{benchmark_id}.json")
+        
+        results = {
+            'benchmark_id': benchmark_id,
+            'status': 'running',
+            'created_at': datetime.now().isoformat(),
+            'config': benchmark_data,
+            'results': {},
+            'metrics': {}
+        }
+        
+        with open(results_path, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        questions = benchmark_data.get('questions', [])
+        ai_configs = benchmark_data.get('ai_configs', {})
+        judge_ai = benchmark_data.get('judge_ai', 'current')
+        
+        if not ai_configs:
+            raise ValueError("No AI configurations provided")
+        
+        if not questions:
+            raise ValueError("No benchmark questions provided")
+        
+        total_tests = len(ai_configs) * len(questions)
+        current_test = 0
+        
+        for ai_name, ai_config in ai_configs.items():
+            results['results'][ai_name] = []
+            
+            if not ai_config.get('service'):
+                app.logger.warning(f"AI config {ai_name} missing service, skipping")
+                continue
+            
+            for i, question_data in enumerate(questions):
+                current_test += 1
+                
+                progress = (current_test / total_tests) * 100
+                results['progress'] = round(progress, 1)
+                results['current_test'] = f"Testing {ai_name} - Question {i+1}/{len(questions)}"
+                
+                with open(results_path, 'w') as f:
+                    json.dump(results, f, indent=2)
+                
+                try:
+                    start_time = time.time()
+                    
+                    question = question_data.get('question', '')
+                    for var_name, var_value in question_data.get('variables', {}).items():
+                        question = question.replace(f"{{{var_name}}}", str(var_value))
+                    
+                    ai_response = get_ai_response(question, ai_config)
+                    response_time = time.time() - start_time
+                    
+                    expected_answer = question_data.get('expected_answer', '')
+                    
+                    accuracy_score = evaluate_answer_accuracy(ai_response, expected_answer, judge_ai)
+                    
+                    response_length = len(ai_response.split()) if ai_response else 0
+                    
+                    question_result = {
+                        'question_id': i,
+                        'question': question,
+                        'expected_answer': expected_answer,
+                        'ai_response': ai_response,
+                        'response_time': response_time,
+                        'response_length': response_length,
+                        'accuracy_score': accuracy_score,
+                        'accuracy_binary': accuracy_score > 0.7,  # Consider >70% as "correct"
+                        'judge_ai': judge_ai
+                    }
+                    
+                    results['results'][ai_name].append(question_result)
+                    
+                except Exception as e:
+                    app.logger.error(f"Error processing question {i} for AI {ai_name}: {str(e)}")
+                    error_result = {
+                        'question_id': i,
+                        'question': question_data.get('question', ''),
+                        'expected_answer': question_data.get('expected_answer', ''),
+                        'ai_response': f"Error: {str(e)}",
+                        'response_time': 0.0,
+                        'response_length': 0,
+                        'accuracy_score': 0.0,
+                        'accuracy_binary': False,
+                        'judge_ai': judge_ai,
+                        'error': str(e)
+                    }
+                    results['results'][ai_name].append(error_result)
+        
+        results['metrics'] = calculate_benchmark_metrics(results['results'])
+        results['status'] = 'completed'
+        results['progress'] = 100.0
+        results['current_test'] = 'Benchmark completed successfully'
+        
+        with open(results_path, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        app.logger.info(f"Benchmark {benchmark_id} completed successfully")
+        
+    except Exception as e:
+        app.logger.error(f"Error running benchmark {benchmark_id}: {str(e)}")
+        try:
+            results['status'] = 'error'
+            results['error'] = str(e)
+            results['progress'] = 0.0
+            results['current_test'] = f'Error: {str(e)}'
+            with open(results_path, 'w') as f:
+                json.dump(results, f, indent=2)
+        except:
+            pass
+
+def get_ai_response(question, ai_config):
+    try:
+        service = ai_config.get('service', 'openai')
+        
+        if ai_config.get('demo_mode', False):
+            time.sleep(0.5)  # Simulate short response time
+            return f"Mock response for: {question[:50]}..."
+        
+        timeout = 60  # Increased from 15 to 60 seconds
+        
+        temperature = ai_config.get('temperature', 0.7)
+        max_tokens = ai_config.get('max_tokens', 1000)
+        
+        if service == 'ollama':
+            response = requests.post(
+                f"{ai_config['url']}/api/generate",
+                json={
+                    'model': ai_config['model'],
+                    'prompt': question,
+                    'stream': False,
+                    'options': {
+                        'temperature': temperature,
+                        'num_ctx': max_tokens
+                    }
+                },
+                timeout=timeout
+            )
+            return response.json().get('response', 'No response') if response.ok else f"Error: {response.text}"
+            
+        elif service == 'openai':
+            headers = {'Authorization': f"Bearer {ai_config['key']}"}
+            if 'base_url' not in ai_config:
+                ai_config['base_url'] = 'https://api.openai.com/v1'
+                
+            response = requests.post(
+                f"{ai_config['base_url']}/chat/completions",
+                headers=headers,
+                json={
+                    'model': ai_config['model'],
+                    'messages': [{'role': 'user', 'content': question}],
+                    'temperature': temperature,
+                    'max_tokens': max_tokens
+                },
+                timeout=timeout
+            )
+            return response.json()['choices'][0]['message']['content'] if response.ok else f"Error: {response.text}"
+            
+        elif service == 'deepseek':
+            headers = {'Authorization': f"Bearer {ai_config['key']}"}
+            if 'base_url' not in ai_config:
+                ai_config['base_url'] = 'https://api.deepseek.com/v1'
+                
+            response = requests.post(
+                f"{ai_config['base_url']}/chat/completions",
+                headers=headers,
+                json={
+                    'model': ai_config['model'],
+                    'messages': [{'role': 'user', 'content': question}],
+                    'temperature': temperature,
+                    'max_tokens': max_tokens
+                },
+                timeout=timeout
+            )
+            return response.json()['choices'][0]['message']['content'] if response.ok else f"Error: {response.text}"
+            
+        elif service == 'claude':
+            headers = {'x-api-key': ai_config['key'], 'anthropic-version': '2023-06-01'}
+            if 'base_url' not in ai_config:
+                ai_config['base_url'] = 'https://api.anthropic.com/v1'
+                
+            response = requests.post(
+                f"{ai_config['base_url']}/messages",
+                headers=headers,
+                json={
+                    'model': ai_config['model'],
+                    'max_tokens': max_tokens,
+                    'temperature': temperature,
+                    'messages': [{'role': 'user', 'content': question}]
+                },
+                timeout=timeout
+            )
+            return response.json()['content'][0]['text'] if response.ok else f"Error: {response.text}"
+        
+        return "Unsupported AI service"
+        
+    except Exception as e:
+        return f"Error getting AI response: {str(e)}"
+
+def evaluate_answer_accuracy(ai_response, expected_answer, judge_ai):
+    try:
+        if not ai_response or ai_response.startswith("Error"):
+            return 0.0
+        
+        if not expected_answer:
+            return 0.5
+        
+        if judge_ai and judge_ai != 'current':
+            return evaluate_with_ai_judge(ai_response, expected_answer, judge_ai)
+        
+        return evaluate_with_heuristics(ai_response, expected_answer)
+        
+    except Exception as e:
+        app.logger.error(f"Error evaluating accuracy: {str(e)}")
+        return 0.5
+
+def evaluate_with_ai_judge(ai_response, expected_answer, judge_ai):
+    try:
+        judge_prompt = f"""You are an expert evaluator. Rate how accurately the actual response matches the expected answer.
+
+Expected Answer: {expected_answer}
+Actual Response: {ai_response}
+
+Consider:
+- Semantic similarity (same meaning expressed differently)
+- Factual correctness 
+- Completeness of the answer
+- Relevance to the question
+
+Rate the accuracy from 0.0 to 1.0 (where 1.0 is perfect match):
+- 1.0 = Perfect match or equivalent meaning
+- 0.8-0.9 = Mostly correct with minor differences
+- 0.6-0.7 = Partially correct but missing key elements
+- 0.4-0.5 = Some relevance but significant errors
+- 0.2-0.3 = Minimal relevance or mostly incorrect
+- 0.0-0.1 = Completely wrong or irrelevant
+
+Respond with only the numeric score (e.g., 0.85):"""
+
+        config = load_ai_config()
+        judge_config = get_judge_ai_config(judge_ai, config)
+        
+        if not judge_config:
+            app.logger.warning(f"Invalid judge AI: {judge_ai}, falling back to heuristics")
+            return evaluate_with_heuristics(ai_response, expected_answer)
+        
+        judgment = get_ai_response(judge_prompt, judge_config)
+        
+        score = extract_numeric_score(judgment)
+        return min(max(score, 0.0), 1.0)  # Clamp between 0.0 and 1.0
+        
+    except Exception as e:
+        app.logger.error(f"Error with AI judge evaluation: {str(e)}")
+        return evaluate_with_heuristics(ai_response, expected_answer)
+
+def evaluate_with_heuristics(ai_response, expected_answer):
+    try:
+        expected_words = set(expected_answer.lower().split())
+        response_words = set(ai_response.lower().split())
+        
+        if not expected_words:
+            return 0.5
+        
+        overlap = len(expected_words & response_words)
+        total_expected = len(expected_words)
+        
+        base_score = overlap / total_expected if total_expected > 0 else 0.5
+        
+        length_ratio = min(len(ai_response), len(expected_answer)) / max(len(ai_response), len(expected_answer)) if max(len(ai_response), len(expected_answer)) > 0 else 0.5
+        
+        final_score = (base_score * 0.7) + (length_ratio * 0.3)
+        
+        return min(max(final_score, 0.0), 1.0)  # Clamp between 0.0 and 1.0
+        
+    except Exception as e:
+        app.logger.error(f"Error in heuristic evaluation: {str(e)}")
+        return 0.5
+
+def get_judge_ai_config(judge_ai, config):
+    if judge_ai == 'current':
+        service = config.get('service', 'ollama')
+        if service in config:
+            judge_config = config[service].copy()
+            judge_config['service'] = service
+            return judge_config
+    elif judge_ai in ['ollama', 'openai', 'deepseek', 'claude']:
+        if judge_ai in config:
+            judge_config = config[judge_ai].copy()
+            judge_config['service'] = judge_ai
+            return judge_config
+    
+    return None
+
+def extract_numeric_score(judgment):
+    try:
+        matches = re.findall(r'\b([0-1]?\.\d+|\b[01]\b)', judgment)
+        if matches:
+            score = float(matches[0])
+            if 0.0 <= score <= 1.0:
+                return score
+        
+        percent_matches = re.findall(r'(\d+)%', judgment)
+        if percent_matches:
+            score = float(percent_matches[0]) / 100.0
+            if 0.0 <= score <= 1.0:
+                return score
+        
+        number_matches = re.findall(r'\b(\d+(?:\.\d+)?)\b', judgment)
+        if number_matches:
+            score = float(number_matches[0])
+            if score <= 1.0:
+                return score
+            elif score <= 10.0:
+                return score / 10.0
+            elif score <= 100.0:
+                return score / 100.0
+        
+        return 0.5
+        
+    except Exception as e:
+        app.logger.error(f"Error extracting score from judgment: {str(e)}")
+        return 0.5
+
+def calculate_benchmark_metrics(results):
+    metrics = {}
+    
+    for ai_name, ai_results in results.items():
+        if not ai_results:
+            continue
+        
+        avg_response_time = sum(r['response_time'] for r in ai_results) / len(ai_results)
+        avg_response_length = sum(r['response_length'] for r in ai_results) / len(ai_results)
+        avg_accuracy_score = sum(r['accuracy_score'] for r in ai_results) / len(ai_results)
+        accuracy_rate = sum(1 for r in ai_results if r['accuracy_binary']) / len(ai_results)
+        
+        metrics[ai_name] = {
+            'total_questions': len(ai_results),
+            'avg_response_time': round(avg_response_time, 2),
+            'avg_response_length': round(avg_response_length, 1),
+            'avg_accuracy_score': round(avg_accuracy_score, 3),
+            'accuracy_rate': round(accuracy_rate, 3),
+            'correct_answers': sum(1 for r in ai_results if r['accuracy_binary']),
+            'total_response_time': round(sum(r['response_time'] for r in ai_results), 2)
+        }
+    
+    return metrics
 
 @app.route('/reports')
 @limiter.limit("20 per minute")
@@ -1295,8 +1792,8 @@ def reports():
     return render_template('reports.html', reports=saved_analyses)
 
 @app.route('/manage-products', methods=['GET', 'POST'])
-@limiter.limit("10 per minute")
-@conditional_auth(['POST'])
+@limiter.limit("5 per day", methods=['POST'])
+@limiter.limit("10 per minute", methods=['GET'])
 def manage_products():
     if request.method == 'POST':
         product_name = validate_input(request.form.get('product_name'), 100, r'^[a-zA-Z0-9._-]+$')
@@ -1312,6 +1809,10 @@ def manage_products():
         
         if product_name in products:
             return render_template("manage_products.html", error="Product already exists")
+        
+        for existing_product, product_data in products.items():
+            if product_data.get('repo_url') == repo_url:
+                return render_template("manage_products.html", error=f"Repository URL already exists in product '{existing_product}'")
         
         products[product_name] = {'repo_url': repo_url, 'versions': []}
         
@@ -1449,7 +1950,6 @@ def run_analysis_background(analysis_id, params, mode):
         analysis_data['meta']['status'] = 'completed'
         analysis_data['results'] = analyzed_results
         
-        # Update AI service and model information if AI was used
         if params.get('enable_ai') == 'on':
             config = load_ai_config()
             ai_service = config.get('service', 'ollama')
@@ -1473,7 +1973,6 @@ def run_analysis_background(analysis_id, params, mode):
 
 @app.route('/products', methods=['GET', 'POST'])
 @limiter.limit("10 per minute")
-@conditional_auth(['POST'])
 def products():
     products_data = load_json_safe(PRODUCTS_FILE, {})
     products_list = list(products_data.keys()) if isinstance(products_data, dict) else []
@@ -1583,6 +2082,7 @@ def library():
 
 @app.route('/library/delete/<repo_id>', methods=['POST'])
 @limiter.limit("10 per minute")
+@requires_basic_auth
 def delete_library_repo(repo_id):
     if not validate_uuid(repo_id):
         flash('Invalid repository ID', 'danger')
@@ -1598,6 +2098,7 @@ def delete_library_repo(repo_id):
 
 @app.route('/library/toggle/<repo_id>', methods=['POST'])
 @limiter.limit("10 per minute")
+@requires_basic_auth
 def toggle_library_repo(repo_id):
     if not validate_uuid(repo_id):
         flash('Invalid repository ID', 'danger')
@@ -1625,6 +2126,68 @@ def check_versions_now():
     threading.Thread(target=check_for_new_versions).start()
     flash('Version check started in background', 'info')
     return redirect(url_for('library'))
+
+@app.route('/ai-benchmark', methods=['GET', 'POST'])
+def ai_benchmark():
+    if request.method == 'POST':
+        try:
+            if not request.authorization or not check_basic_auth(request.authorization.username, request.authorization.password):
+                return ('Authentication required', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
+            benchmark_data = request.json
+            if not benchmark_data:
+                return jsonify({'error': 'No benchmark data provided'}), 400
+            benchmark_id = str(uuid.uuid4())
+            threading.Thread(target=run_ai_benchmark, args=(benchmark_id, benchmark_data)).start()
+            return jsonify({'benchmark_id': benchmark_id, 'status': 'started'})
+        except Exception as e:
+            app.logger.error(f"Error starting benchmark: {str(e)}")
+            return jsonify({'error': 'Failed to start benchmark'}), 500
+    benchmark_results = []
+    try:
+        for filename in os.listdir(SAVED_ANALYSES_DIR):
+            if filename.startswith('benchmark_') and filename.endswith('.json'):
+                try:
+                    benchmark_id = filename.replace('benchmark_', '').replace('.json', '')
+                    if not validate_uuid(benchmark_id):
+                        continue
+                    benchmark_path = os.path.join(SAVED_ANALYSES_DIR, filename)
+                    real_path = os.path.realpath(benchmark_path)
+                    if not real_path.startswith(os.path.realpath(SAVED_ANALYSES_DIR)):
+                        continue
+                    with open(benchmark_path, 'r') as f:
+                        benchmark = json.load(f)
+                    if not isinstance(benchmark, dict):
+                        continue
+                    benchmark['id'] = benchmark_id
+                    benchmark_results.append(benchmark)
+                except Exception as e:
+                    app.logger.warning(f"Error loading benchmark {filename}: {str(e)}")
+        benchmark_results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    except Exception as e:
+        app.logger.error(f"Error loading benchmark results: {str(e)}")
+    return render_template("ai_benchmark.html", benchmark_results=benchmark_results)
+
+@app.route('/benchmark-results/<benchmark_id>')
+@requires_basic_auth
+def benchmark_results(benchmark_id):
+    if not validate_uuid(benchmark_id):
+        abort(404)
+    
+    try:
+        results_path = os.path.join(SAVED_ANALYSES_DIR, f"benchmark_{benchmark_id}.json")
+        if not os.path.exists(results_path):
+            return render_template("benchmark_results.html", benchmark_id=benchmark_id, status="running")
+        
+        with open(results_path, 'r') as f:
+            benchmark_results = json.load(f)
+        
+        return render_template("benchmark_results.html", 
+                             benchmark_id=benchmark_id,
+                             results=benchmark_results,
+                             status=benchmark_results.get('status', 'completed'))
+    except Exception as e:
+        app.logger.error(f"Error loading benchmark results {benchmark_id}: {str(e)}")
+        return render_template("benchmark_results.html", benchmark_id=benchmark_id, status="error")
 
 @app.route('/', methods=['GET'])
 @limiter.limit("50 per minute")
