@@ -40,7 +40,7 @@ PRODUCTS_FILE = os.path.join(PRODUCTS_DIR, 'products.json')
 LIBRARY_FILE = os.path.join(PRODUCTS_DIR, 'library.json')
 SAVED_ANALYSES_DIR = os.path.join(os.path.dirname(__file__), 'saved_analyses')
 
-DEFAULT_TIMEOUT = 300
+DEFAULT_TIMEOUT = None
 CVE_FETCH_TIMEOUT = 60
 MAX_RETRY_ATTEMPTS = 3
 RATE_LIMIT_BACKOFF_BASE = 2
@@ -567,8 +567,18 @@ class AIServiceClient:
         self.timeout = DEFAULT_TIMEOUT
         self.max_retries = MAX_RETRY_ATTEMPTS
     
+    def _calculate_safe_backoff(self, retry_count):
+        try:
+            if retry_count <= 10:
+                backoff_time = min(RATE_LIMIT_BACKOFF_BASE ** retry_count, MAX_BACKOFF_TIME)
+            else:
+                backoff_time = min(retry_count * RATE_LIMIT_BACKOFF_BASE, MAX_BACKOFF_TIME)            
+            return min(backoff_time, MAX_BACKOFF_TIME)
+        except (OverflowError, ValueError):
+            return MAX_BACKOFF_TIME
+    
     def _get_ollama_request(self, prompt, temperature, max_tokens):
-        return {
+        request_data = {
             'url': f"{self.config['ollama']['url']}{AI_SERVICE_CONFIGS['ollama']['endpoint']}",
             'json': {
                 'model': self.config['ollama']['model'],
@@ -578,12 +588,14 @@ class AIServiceClient:
                     'temperature': temperature,
                     'num_ctx': max_tokens
                 }
-            },
-            'timeout': self.timeout
+            }
         }
+        if self.timeout is not None:
+            request_data['timeout'] = self.timeout
+        return request_data
     
     def _get_openai_request(self, prompt, temperature, max_tokens):
-        return {
+        request_data = {
             'url': f"{self.config['openai']['base_url']}{AI_SERVICE_CONFIGS['openai']['endpoint']}",
             'headers': {'Authorization': f"Bearer {self.config['openai']['key']}"},
             'json': {
@@ -591,12 +603,14 @@ class AIServiceClient:
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': temperature,
                 'max_tokens': max_tokens
-            },
-            'timeout': self.timeout
+            }
         }
+        if self.timeout is not None:
+            request_data['timeout'] = self.timeout
+        return request_data
     
     def _get_deepseek_request(self, prompt, temperature, max_tokens):
-        return {
+        request_data = {
             'url': f"{self.config['deepseek']['base_url']}{AI_SERVICE_CONFIGS['deepseek']['endpoint']}",
             'headers': {'Authorization': f"Bearer {self.config['deepseek']['key']}"},
             'json': {
@@ -604,12 +618,14 @@ class AIServiceClient:
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': temperature,
                 'max_tokens': max_tokens
-            },
-            'timeout': self.timeout
+            }
         }
+        if self.timeout is not None:
+            request_data['timeout'] = self.timeout
+        return request_data
     
     def _get_claude_request(self, prompt, temperature, max_tokens):
-        return {
+        request_data = {
             'url': f"{self.config['claude']['base_url']}{AI_SERVICE_CONFIGS['claude']['endpoint']}",
             'headers': {
                 'x-api-key': self.config['claude']['key'],
@@ -620,9 +636,11 @@ class AIServiceClient:
                 'max_tokens': max_tokens,
                 'temperature': temperature,
                 'messages': [{'role': 'user', 'content': prompt}]
-            },
-            'timeout': self.timeout
+            }
         }
+        if self.timeout is not None:
+            request_data['timeout'] = self.timeout
+        return request_data
     
     def _parse_response(self, response, service):
         if not response.ok:
@@ -642,7 +660,7 @@ class AIServiceClient:
     
     def _handle_rate_limiting(self, response, retry_count):
         if response.status_code == HTTP_RATE_LIMITED:
-            backoff_time = min(RATE_LIMIT_BACKOFF_BASE ** retry_count, MAX_BACKOFF_TIME)
+            backoff_time = self._calculate_safe_backoff(retry_count)
             time.sleep(backoff_time)
             return True
         return False
@@ -674,7 +692,8 @@ class AIServiceClient:
             except requests.exceptions.RequestException as e:
                 if retry_count == self.max_retries - 1:
                     return f"Connection failed: {str(e)}"
-                time.sleep(min(RATE_LIMIT_BACKOFF_BASE ** retry_count, MAX_BACKOFF_TIME))
+                backoff_time = self._calculate_safe_backoff(retry_count)
+                time.sleep(backoff_time)
             except Exception as e:
                 return f"Unexpected error: {str(e)}"
         
@@ -1616,9 +1635,9 @@ def get_ai_response(question, ai_config):
         max_tokens = ai_config.get('max_tokens', DEFAULT_MAX_TOKENS)
         
         if service == 'ollama':
-            response = requests.post(
-                f"{ai_config['url']}/api/generate",
-                json={
+            request_data = {
+                'url': f"{ai_config['url']}/api/generate",
+                'json': {
                     'model': ai_config['model'],
                     'prompt': question,
                     'stream': False,
@@ -1626,9 +1645,11 @@ def get_ai_response(question, ai_config):
                         'temperature': temperature,
                         'num_ctx': max_tokens
                     }
-                },
-                timeout=timeout
-            )
+                }
+            }
+            if timeout is not None:
+                request_data['timeout'] = timeout
+            response = requests.post(**request_data)
             return response.json().get('response', 'No response') if response.ok else f"Error: {response.text}"
             
         elif service == 'openai':
@@ -1636,17 +1657,19 @@ def get_ai_response(question, ai_config):
             if 'base_url' not in ai_config:
                 ai_config['base_url'] = AI_SERVICE_CONFIGS['openai']['base_url']
                 
-            response = requests.post(
-                f"{ai_config['base_url']}/chat/completions",
-                headers=headers,
-                json={
+            request_data = {
+                'url': f"{ai_config['base_url']}/chat/completions",
+                'headers': headers,
+                'json': {
                     'model': ai_config['model'],
                     'messages': [{'role': 'user', 'content': question}],
                     'temperature': temperature,
                     'max_tokens': max_tokens
-                },
-                timeout=timeout
-            )
+                }
+            }
+            if timeout is not None:
+                request_data['timeout'] = timeout
+            response = requests.post(**request_data)
             return response.json()['choices'][0]['message']['content'] if response.ok else f"Error: {response.text}"
             
         elif service == 'deepseek':
@@ -1654,17 +1677,19 @@ def get_ai_response(question, ai_config):
             if 'base_url' not in ai_config:
                 ai_config['base_url'] = AI_SERVICE_CONFIGS['deepseek']['base_url']
                 
-            response = requests.post(
-                f"{ai_config['base_url']}/chat/completions",
-                headers=headers,
-                json={
+            request_data = {
+                'url': f"{ai_config['base_url']}/chat/completions",
+                'headers': headers,
+                'json': {
                     'model': ai_config['model'],
                     'messages': [{'role': 'user', 'content': question}],
                     'temperature': temperature,
                     'max_tokens': max_tokens
-                },
-                timeout=timeout
-            )
+                }
+            }
+            if timeout is not None:
+                request_data['timeout'] = timeout
+            response = requests.post(**request_data)
             return response.json()['choices'][0]['message']['content'] if response.ok else f"Error: {response.text}"
             
         elif service == 'claude':
@@ -1672,17 +1697,19 @@ def get_ai_response(question, ai_config):
             if 'base_url' not in ai_config:
                 ai_config['base_url'] = AI_SERVICE_CONFIGS['claude']['base_url']
                 
-            response = requests.post(
-                f"{ai_config['base_url']}/messages",
-                headers=headers,
-                json={
+            request_data = {
+                'url': f"{ai_config['base_url']}/messages",
+                'headers': headers,
+                'json': {
                     'model': ai_config['model'],
                     'max_tokens': max_tokens,
                     'temperature': temperature,
                     'messages': [{'role': 'user', 'content': question}]
-                },
-                timeout=timeout
-            )
+                }
+            }
+            if timeout is not None:
+                request_data['timeout'] = timeout
+            response = requests.post(**request_data)
             return response.json()['content'][0]['text'] if response.ok else f"Error: {response.text}"
         
         return "Unsupported AI service"
@@ -2030,7 +2057,6 @@ def run_analysis_background(analysis_id, params, mode):
             if enable_ai == 'on' and analyzed_results:
                 analyzed_results = process_ai_analysis(analyzed_results, diffs, cve_ids)
         
-        # Update analysis record
         with open(analysis_path, 'r') as f:
             analysis_data = json.load(f)
         analysis_data['meta']['status'] = 'completed'
