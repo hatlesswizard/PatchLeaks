@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore", category=Warning, message=".*urllib3 v2 only supports OpenSSL.*")
 import os
 import re
 import json
@@ -27,9 +29,15 @@ from logging.handlers import RotatingFileHandler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import atexit
+import argparse
+import hashlib
+import warnings
+import random
+import socket
 
-BASIC_AUTH_USERNAME = os.environ.get('BASIC_AUTH_USERNAME', '4ba86d22361ad4dc8728097f0aac85d1')
-BASIC_AUTH_PASSWORD = os.environ.get('BASIC_AUTH_PASSWORD', '07f88d7227784a3bcbb8d14f9cdd57c5')
+
+BASIC_AUTH_USERNAME = None
+BASIC_AUTH_PASSWORD = None
 
 VALID_AI_SERVICES = frozenset(['ollama', 'openai', 'deepseek', 'claude'])
 VALID_SOURCES = frozenset(['library_auto', 'products', 'folder', 'direct'])
@@ -114,7 +122,7 @@ HTTP_UNAUTHORIZED = 401
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0"
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 80
+DEFAULT_PORT = None
 
 app = Flask(__name__)
 app.secret_key = secrets.token_urlsafe(32)
@@ -2306,7 +2314,90 @@ def benchmark_results(benchmark_id):
 def index():
     return render_template("index.html")
 
+def generate_random_md5():
+    """Generate a random MD5 hash."""
+    random_bytes = os.urandom(16)
+    return hashlib.md5(random_bytes).hexdigest()
+
+def find_free_port():
+    """Find a free port on the system."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
+def print_banner(username, password, host, port):
+    """Print a nice banner with authentication credentials."""
+    banner = f"""
+╔════════════════════════════════════════════════════════════════╗
+║                      PatchLeaks Started                        ║
+╠════════════════════════════════════════════════════════════════╣
+║  Server URL:  http://{host}:{port}                    
+║                                                                ║
+║  Basic Authentication Credentials:                             ║
+║  ┌────────────────────────────────────────────────────────┐   ║
+║  │ Username: {username}                   │   ║
+║  │ Password: {password}                   │   ║
+║  └────────────────────────────────────────────────────────┘   ║
+║                                                                ║
+║  ⚠️  IMPORTANT: Save these credentials!                        ║
+║  They are randomly generated each time the app starts.         ║
+╚════════════════════════════════════════════════════════════════╝
+"""
+    print(banner)
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='PatchLeaks - Security Patch Analysis Tool',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                    # Run with random free port
+  %(prog)s --port 8080        # Run on custom port 8080
+  %(prog)s -p 5000            # Run on port 5000 (short form)
+  
+Features:
+  - Analyzes security patches between software versions
+  - AI-powered vulnerability detection
+  - Supports multiple AI services (Ollama, OpenAI, DeepSeek, Claude)
+  - Automatic version monitoring for GitHub repositories
+  - CVE matching and analysis
+  
+Authentication:
+  Random MD5 credentials are generated on each startup for security.
+  Username and password will be displayed in the console.
+        """
+    )
+    
+    parser.add_argument(
+        '-p', '--port',
+        type=int,
+        default=DEFAULT_PORT,
+        help='Port to run the server on (default: random free port)'
+    )
+    
+    parser.add_argument(
+        '--host',
+        type=str,
+        default=DEFAULT_HOST,
+        help=f'Host address to bind to (default: {DEFAULT_HOST})'
+    )
+    
+    args = parser.parse_args()
+    
+    if args.port is None:
+        port = find_free_port()
+        print(f"🔍 No port specified, using random free port: {port}")
+    else:
+        port = args.port
+    
+    BASIC_AUTH_USERNAME = generate_random_md5()
+    BASIC_AUTH_PASSWORD = generate_random_md5()
+    
+    globals()['BASIC_AUTH_USERNAME'] = BASIC_AUTH_USERNAME
+    globals()['BASIC_AUTH_PASSWORD'] = BASIC_AUTH_PASSWORD
+    
     os.makedirs(PRODUCTS_DIR, exist_ok=True)
     os.chmod(PRODUCTS_DIR, 0o755)
     
@@ -2314,4 +2405,6 @@ if __name__ == '__main__':
         with open(os.path.join(PRODUCTS_DIR, 'magento.json'), 'w') as f:
             json.dump([], f)
     
-    app.run(host=DEFAULT_HOST, port=DEFAULT_PORT, debug=False)
+    print_banner(BASIC_AUTH_USERNAME, BASIC_AUTH_PASSWORD, args.host, port)
+    
+    app.run(host=args.host, port=port, debug=False)
