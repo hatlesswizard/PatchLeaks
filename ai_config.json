@@ -1,1 +1,30 @@
-{"service": "deepseek", "ollama": {"url": "http://localhost:11434", "model": "qwen2.5-coder:3b"}, "openai": {"key": "", "model": "gpt-4-turbo", "base_url": null}, "deepseek": {"key": "", "model": "deepseek-reasoner", "base_url": null}, "claude": {"key": "", "model": "claude-3-5-haiku-20241022", "base_url": null}, "parameters": {"temperature": 1.0, "num_ctx": 8192  },"prompts": {"main_analysis": "Analyze the provided code diff for security fixes.\n\nInstructions:\n1. Your answer MUST strictly follow the answer format outlined below.\n2. Always include the vulnerability name if one exists.\n3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.\n4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.\n\nAnswer Format for Each Vulnerability:\n    Vulnerability Existed: [yes/no/not sure]\n    [Vulnerability Name] [File] [Lines]\n    [Old Code]\n    [Fixed Code]\n\nAdditional Details:\n    File: {file_path}\n    Diff Content:\n    {diff_content}","cve_analysis": "Analysis:\n{ai_response}\n\nQuestion: Do any of the vulnerabilities identified in the analysis match the description?\nReply strictly in this format: 'Description Matches: Yes/No' \n\nDescription:\n{cve_description}"}}
+{
+  "service": "deepseek",
+  "ollama": {
+    "model": "qwen2.5-coder:3b",
+    "url": "http://localhost:11434"
+  },
+  "openai": {
+    "base_url": "https://api.openai.com/v1",
+    "key": "",
+    "model": "gpt-4-turbo"
+  },
+  "deepseek": {
+    "base_url": "https://api.deepseek.com/v1",
+    "key": "sk-00fdf79d96e84778a3df3e40ef1b9168",
+    "model": "deepseek-chat"
+  },
+  "claude": {
+    "base_url": "https://api.anthropic.com/v1",
+    "key": "",
+    "model": "claude-3-5-haiku-20241022"
+  },
+  "parameters": {
+    "num_ctx": 8192,
+    "temperature": 1
+  },
+  "prompts": {
+    "cve_analysis": "Analysis:\r\n{ai_response}\r\n\r\nQuestion: Do any of the vulnerabilities identified in the analysis match the description?\r\nReply strictly in this format: 'Description Matches: Yes/No' \r\n\r\nDescription:\r\n{cve_description}",
+    "main_analysis": "Analyze the provided code diff for security fixes.\r\n\r\nInstructions:\r\n1. Your answer MUST strictly follow the answer format outlined below.\r\n2. Always include the vulnerability name if one exists.\r\n3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.\r\n4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.\r\n\r\nAnswer Format for Each Vulnerability:\r\n    Vulnerability Existed: [yes/no/not sure]\r\n    [Vulnerability Name] [File] [Lines]\r\n    [Old Code]\r\n    [Fixed Code]\r\n\r\nAdditional Details:\r\n    File: {file_path}\r\n    Diff Content:\r\n    {diff_content}"
+  }
+}
