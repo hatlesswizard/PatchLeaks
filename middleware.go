@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// Rate limiter structure
 type rateLimiter struct {
 	visitors map[string]*visitor
 	mu       sync.RWMutex
@@ -25,17 +24,14 @@ var (
 		visitors: make(map[string]*visitor),
 	}
 	
-	// Rate limit configuration
 	requestsPerMinute = 50
 	cleanupInterval   = time.Minute * 5
 )
 
 func init() {
-	// Start cleanup goroutine
 	go cleanupVisitors()
 }
 
-// Basic auth middleware
 func basicAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -45,7 +41,6 @@ func basicAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Parse authorization header
 		const prefix = "Basic "
 		if !strings.HasPrefix(auth, prefix) {
 			requestAuth(w)
@@ -80,7 +75,6 @@ func requestAuth(w http.ResponseWriter) {
 	w.Write([]byte("Authentication required"))
 }
 
-// Rate limit middleware
 func rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := getIP(r)
@@ -97,7 +91,6 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Reset count if last seen was over a minute ago
 		if time.Since(v.lastSeen) > time.Minute {
 			v.count = 1
 			v.lastSeen = time.Now()
@@ -106,7 +99,6 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check rate limit
 		if v.count >= requestsPerMinute {
 			limiter.mu.Unlock()
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
@@ -122,14 +114,12 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 }
 
 func getIP(r *http.Request) string {
-	// Try X-Forwarded-For header first
 	forwarded := r.Header.Get("X-Forwarded-For")
 	if forwarded != "" {
 		ips := strings.Split(forwarded, ",")
 		return strings.TrimSpace(ips[0])
 	}
 
-	// Fall back to RemoteAddr
 	ip := r.RemoteAddr
 	if idx := strings.LastIndex(ip, ":"); idx != -1 {
 		ip = ip[:idx]
@@ -152,7 +142,6 @@ func cleanupVisitors() {
 	}
 }
 
-// CORS middleware (if needed)
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -168,17 +157,14 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Logging middleware
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		
-		// Create a response writer wrapper to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		
 		next.ServeHTTP(wrapped, r)
 		
-		// Log request
 		duration := time.Since(start)
 		log.Printf("%s %s %d %v", r.Method, r.URL.Path, wrapped.statusCode, duration)
 	})
