@@ -16,7 +16,6 @@ import (
 	"time"
 )
 
-// runAnalysisBackground runs analysis in the background
 func runAnalysisBackground(analysisID string, params map[string]interface{}, mode string) {
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	
@@ -43,7 +42,6 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 		return
 	}
 
-	// Load existing analysis
 	data, err := os.ReadFile(analysisPath)
 	if err != nil {
 		log.Printf("Failed to read analysis file: %v", err)
@@ -56,14 +54,11 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 		return
 	}
 
-	// Update with results
 	analysis.Meta.Status = "completed"
 	analysis.Results = analyzedResults
 	
-	// Update params with any changes from analysis (e.g., CVE IDs fetched during analysis)
 	analysis.Meta.Params = params
 
-	// Update AI info if enabled
 	if params["enable_ai"] == "on" && config != nil {
 		analysis.Meta.AIService = config.Service
 		if svcConfig, ok := config.GetServiceConfig(config.Service); ok {
@@ -73,7 +68,6 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 		}
 	}
 
-	// Save updated analysis
 	updatedData, _ := json.MarshalIndent(analysis, "", "  ")
 	os.WriteFile(analysisPath, updatedData, 0644)
 
@@ -83,11 +77,9 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResult {
 	log.Printf("Running REAL products analysis with params: %v", params)
 	
-	// Initialize cache and clean old entries
 	os.MkdirAll("cache", 0755)
-	cleanOldCache(30) // Remove cache older than 30 days
+	cleanOldCache(30)
 	
-	// Log cache stats
 	if count, size, err := getCacheStats(); err == nil {
 		log.Printf("Cache stats: %d versions, %.2f MB", count, float64(size)/(1024*1024))
 	}
@@ -101,7 +93,6 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 	extension, _ := params["extension"].(string)
 	specialKeywords, _ := params["special_keywords"].(string)
 	
-	// Get product repository URL
 	products := loadProducts()
 	productData, exists := products[product]
 	if !exists {
@@ -111,29 +102,23 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 	
 	log.Printf("Analyzing %s: %s → %s (AI enabled: %v)", product, oldVersion, newVersion, enableAI)
 	
-	// 1. Download and extract both versions (cached)
 	oldPath, err := downloadAndExtractVersion(productData.RepoURL, oldVersion)
 	if err != nil {
 		log.Printf("Failed to download old version %s: %v", oldVersion, err)
 		return make(map[string]AnalysisResult)
 	}
-	// Don't remove cached versions - they're reused
 	
 	newPath, err := downloadAndExtractVersion(productData.RepoURL, newVersion)
 	if err != nil {
 		log.Printf("Failed to download new version %s: %v", newVersion, err)
 		return make(map[string]AnalysisResult)
 	}
-	// Don't remove cached versions - they're reused
 	
-	// 2. Compare directories and generate diffs
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
-	// 3. Analyze diffs for vulnerabilities
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	
-	// 4. Run AI analysis if enabled
 	if enableAI && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads)
 	}
@@ -145,11 +130,9 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult {
 	log.Printf("Running library analysis with params: %v", params)
 	
-	// Initialize cache and clean old entries
 	os.MkdirAll("cache", 0755)
-	cleanOldCache(30) // Remove cache older than 30 days
+	cleanOldCache(30)
 	
-	// Log cache stats
 	if count, size, err := getCacheStats(); err == nil {
 		log.Printf("Cache stats: %d versions, %.2f MB", count, float64(size)/(1024*1024))
 	}
@@ -164,7 +147,6 @@ func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult
 	extension, _ := params["extension"].(string)
 	specialKeywords, _ := params["special_keywords"].(string)
 	
-	// Validate repository URL
 	if repoURL == "" {
 		log.Printf("Repository URL not provided")
 		return make(map[string]AnalysisResult)
@@ -172,29 +154,23 @@ func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult
 	
 	log.Printf("Analyzing %s: %s → %s (AI enabled: %v)", repoName, oldVersion, newVersion, enableAI)
 	
-	// 1. Download and extract both versions (cached)
 	oldPath, err := downloadAndExtractVersion(repoURL, oldVersion)
 	if err != nil {
 		log.Printf("Failed to download old version %s: %v", oldVersion, err)
 		return make(map[string]AnalysisResult)
 	}
-	// Don't remove cached versions - they're reused
 	
 	newPath, err := downloadAndExtractVersion(repoURL, newVersion)
 	if err != nil {
 		log.Printf("Failed to download new version %s: %v", newVersion, err)
 		return make(map[string]AnalysisResult)
 	}
-	// Don't remove cached versions - they're reused
 	
-	// 2. Compare directories and generate diffs
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
-	// 3. Analyze diffs for vulnerabilities
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	
-	// 4. Run AI analysis if enabled
 	if enableAI && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads)
 	}
@@ -203,18 +179,14 @@ func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult
 	return results
 }
 
-// downloadAndExtractVersion downloads and extracts a specific version from GitHub with caching
 func downloadAndExtractVersion(repoURL, version string) (string, error) {
-	// Create cache directory
 	cacheDir := "cache"
 	os.MkdirAll(cacheDir, 0755)
 	
-	// Generate cache key from repo URL and version
 	repoName := extractRepoName(repoURL)
 	cacheKey := fmt.Sprintf("%s_%s", repoName, version)
 	cachePath := filepath.Join(cacheDir, cacheKey)
 	
-	// Check if already cached
 	if _, err := os.Stat(cachePath); err == nil {
 		log.Printf("Using cached version: %s (%s)", version, cachePath)
 		return cachePath, nil
@@ -222,7 +194,6 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	
 	log.Printf("Downloading and caching %s from %s", version, repoURL)
 	
-	// Download ZIP from GitHub releases
 	downloadURL := fmt.Sprintf("%s/archive/refs/tags/%s.zip", repoURL, version)
 	
 	resp, err := http.Get(downloadURL)
@@ -235,14 +206,12 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 		return "", fmt.Errorf("failed to download %s: status %d", version, resp.StatusCode)
 	}
 	
-	// Create temp directory for extraction
 	tempDir, err := os.MkdirTemp("", fmt.Sprintf("patchleaks_%s_%s", version, "temp"))
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(tempDir) // Clean up temp dir
+	defer os.RemoveAll(tempDir)
 	
-	// Save ZIP file
 	zipPath := filepath.Join(tempDir, "version.zip")
 	zipFile, err := os.Create(zipPath)
 	if err != nil {
@@ -255,14 +224,12 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 		return "", err
 	}
 	
-	// Extract ZIP
 	extractPath := filepath.Join(tempDir, "extracted")
 	err = extractZip(zipPath, extractPath)
 	if err != nil {
 		return "", err
 	}
 	
-	// Find the extracted directory (GitHub creates a directory with the version name)
 	entries, err := os.ReadDir(extractPath)
 	if err != nil {
 		return "", err
@@ -280,7 +247,6 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 		return "", fmt.Errorf("no directory found in extracted archive")
 	}
 	
-	// Copy to cache directory
 	err = copyDirectory(sourcePath, cachePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to cache version: %v", err)
@@ -290,7 +256,6 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	return cachePath, nil
 }
 
-// getCacheStats returns cache statistics
 func getCacheStats() (int, int64, error) {
 	cacheDir := "cache"
 	entries, err := os.ReadDir(cacheDir)
@@ -314,7 +279,6 @@ func getCacheStats() (int, int64, error) {
 	return count, totalSize, nil
 }
 
-// getDirSize calculates the total size of a directory
 func getDirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
@@ -329,7 +293,6 @@ func getDirSize(path string) (int64, error) {
 	return size, err
 }
 
-// cleanOldCache removes cached versions older than specified days
 func cleanOldCache(days int) error {
 	cacheDir := "cache"
 	entries, err := os.ReadDir(cacheDir)
@@ -365,22 +328,17 @@ func cleanOldCache(days int) error {
 	return nil
 }
 
-// extractRepoName extracts repository name from GitHub URL
 func extractRepoName(repoURL string) string {
-	// Remove trailing slash
 	repoURL = strings.TrimSuffix(repoURL, "/")
 	
-	// Extract repo name from URL like https://github.com/user/repo
 	parts := strings.Split(repoURL, "/")
 	if len(parts) >= 2 {
 		return parts[len(parts)-1]
 	}
 	
-	// Fallback: use hash of URL
 	return fmt.Sprintf("repo_%x", sha256.Sum256([]byte(repoURL)))[:8]
 }
 
-// copyDirectory copies a directory recursively
 func copyDirectory(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -398,7 +356,6 @@ func copyDirectory(src, dst string) error {
 			return os.MkdirAll(dstPath, info.Mode())
 		}
 		
-		// Copy file
 		srcFile, err := os.Open(path)
 		if err != nil {
 			return err
@@ -417,7 +374,6 @@ func copyDirectory(src, dst string) error {
 	})
 }
 
-// extractZip extracts a ZIP file to a destination directory
 func extractZip(src, dest string) error {
 	reader, err := zip.OpenReader(src)
 	if err != nil {
@@ -459,19 +415,16 @@ func extractZip(src, dest string) error {
 	return nil
 }
 
-// compareDirectories compares two directories and returns file differences (like Python version)
 func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 	var diffs []DiffFile
 	
 	log.Printf("Comparing directories: %s vs %s", oldPath, newPath)
 	
-	// Get all files from both directories
 	oldFiles := getFiles(oldPath)
 	newFiles := getFiles(newPath)
 	
 	log.Printf("Found %d files in old version, %d files in new version", len(oldFiles), len(newFiles))
 	
-	// Debug: Show some sample files found
 	if len(oldFiles) > 0 {
 		count := 0
 		log.Printf("Sample files in old version:")
@@ -504,14 +457,12 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 		}
 	}
 	
-	// Find common, deleted, and added files
 	commonFiles := intersect(oldFiles, newFiles)
 	deletedFiles := subtract(oldFiles, newFiles)
 	addedFiles := subtract(newFiles, oldFiles)
 	
 	log.Printf("Files: %d common, %d deleted, %d added", len(commonFiles), len(deletedFiles), len(addedFiles))
 	
-	// Apply extension filter if specified
 	if extension != "" {
 		extensions := parseExtensions(extension)
 		commonFiles = filterByExtensions(commonFiles, extensions)
@@ -520,7 +471,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 		log.Printf("After extension filter: %d common, %d deleted, %d added", len(commonFiles), len(deletedFiles), len(addedFiles))
 	}
 	
-	// Process common files (modified)
 	log.Printf("Processing %d common files for modifications...", len(commonFiles))
 	modifiedCount := 0
 	successfulDiffs := 0
@@ -532,7 +482,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 		oldFilePath := filepath.Join(oldPath, file)
 		newFilePath := filepath.Join(newPath, file)
 		
-		// Check if files are actually different
 		oldContent, err1 := os.ReadFile(oldFilePath)
 		newContent, err2 := os.ReadFile(newFilePath)
 		
@@ -541,7 +490,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 			continue
 		}
 		
-		// Compare file contents directly
 		if string(oldContent) != string(newContent) {
 			modifiedCount++
 			log.Printf("File %s is different (size: old=%d, new=%d)", file, len(oldContent), len(newContent))
@@ -558,7 +506,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 	}
 	log.Printf("Found %d modified files out of %d common files, generated %d successful diffs", modifiedCount, len(commonFiles), successfulDiffs)
 	
-	// Process deleted files
 	for _, file := range deletedFiles {
 		oldFilePath := filepath.Join(oldPath, file)
 		diff := compareSingleFile(file, oldFilePath, "", "deleted")
@@ -567,7 +514,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 		}
 	}
 	
-	// Process added files
 	for _, file := range addedFiles {
 		newFilePath := filepath.Join(newPath, file)
 		diff := compareSingleFile(file, "", newFilePath, "added")
@@ -585,7 +531,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 	return diffs
 }
 
-// getFiles gets all files in a directory recursively (like Python get_files with os.walk)
 func getFiles(folder string) map[string]bool {
 	files := make(map[string]bool)
 	
@@ -594,18 +539,15 @@ func getFiles(folder string) map[string]bool {
 			return nil
 		}
 		
-		// Skip directories
 		if info.IsDir() {
 			return nil
 		}
 		
-		// Get relative path from the folder root
 		relPath, err := filepath.Rel(folder, path)
 		if err != nil {
 			return nil
 		}
 		
-		// Skip hidden files and common non-source directories
 		skipDirs := []string{".git", "node_modules", ".vscode", "__pycache__", ".idea", ".DS_Store"}
 		for _, skipDir := range skipDirs {
 			if strings.Contains(relPath, skipDir) {
@@ -613,7 +555,6 @@ func getFiles(folder string) map[string]bool {
 			}
 		}
 		
-		// Skip hidden files (starting with .)
 		if strings.HasPrefix(filepath.Base(relPath), ".") {
 			return nil
 		}
@@ -625,7 +566,6 @@ func getFiles(folder string) map[string]bool {
 	return files
 }
 
-// intersect returns intersection of two file sets
 func intersect(set1, set2 map[string]bool) []string {
 	var result []string
 	for file := range set1 {
@@ -636,7 +576,6 @@ func intersect(set1, set2 map[string]bool) []string {
 	return result
 }
 
-// subtract returns set1 - set2
 func subtract(set1, set2 map[string]bool) []string {
 	var result []string
 	for file := range set1 {
@@ -647,7 +586,6 @@ func subtract(set1, set2 map[string]bool) []string {
 	return result
 }
 
-// parseExtensions parses extension filter string
 func parseExtensions(extFilter string) []string {
 	var extensions []string
 	parts := strings.Split(extFilter, ",")
@@ -665,7 +603,6 @@ func parseExtensions(extFilter string) []string {
 	return extensions
 }
 
-// filterByExtensions filters files by extensions
 func filterByExtensions(files []string, extensions []string) []string {
 	var result []string
 	
@@ -682,7 +619,6 @@ func filterByExtensions(files []string, extensions []string) []string {
 	return result
 }
 
-// compareSingleFile compares a single file (like Python compare_single_file)
 func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 	log.Printf("DEBUG: compareSingleFile called for %s (type: %s)", filename, fileType)
 	
@@ -786,13 +722,11 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 	return nil
 }
 
-// fileExists checks if file exists
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
 }
 
-// readFileLines reads file and returns lines
 func readFileLines(filePath string) ([]string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -800,7 +734,6 @@ func readFileLines(filePath string) ([]string, error) {
 	}
 	
 	lines := strings.Split(string(content), "\n")
-	// Remove empty last line if file ends with newline
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
@@ -808,13 +741,11 @@ func readFileLines(filePath string) ([]string, error) {
 	return lines, nil
 }
 
-// validateFilename validates filename
 func validateFilename(filename string) bool {
 	if filename == "" || len(filename) > 255 {
 		return false
 	}
 	
-	// Check for dangerous characters (but allow path separators for nested files)
 	dangerous := []string{"..", ":", "*", "?", "\"", "<", ">", "|"}
 	for _, char := range dangerous {
 		if strings.Contains(filename, char) {
@@ -822,7 +753,6 @@ func validateFilename(filename string) bool {
 		}
 	}
 	
-	// Check for path traversal attempts
 	if strings.Contains(filename, "..") {
 		return false
 	}
@@ -830,7 +760,6 @@ func validateFilename(filename string) bool {
 	return true
 }
 
-// countByType counts diffs by type
 func countByType(diffs []DiffFile, diffType string) int {
 	count := 0
 	for _, diff := range diffs {
@@ -841,13 +770,11 @@ func countByType(diffs []DiffFile, diffType string) int {
 	return count
 }
 
-// FileInfo represents file information for comparison
 type FileInfo struct {
 	Path string
 	Hash string
 }
 
-// getAllFiles recursively gets all files from a directory
 func getAllFiles(rootPath, extension string) map[string]FileInfo {
 	files := make(map[string]FileInfo)
 	
@@ -860,12 +787,10 @@ func getAllFiles(rootPath, extension string) map[string]FileInfo {
 			return nil
 		}
 		
-		// Filter by extension if specified
 		if extension != "" && !strings.HasSuffix(path, extension) {
 			return nil
 		}
 		
-		// Skip common non-source files
 		skipDirs := []string{".git", "node_modules", ".vscode", "__pycache__", "vendor"}
 		for _, skipDir := range skipDirs {
 			if strings.Contains(path, skipDir) {
@@ -891,11 +816,9 @@ func getAllFiles(rootPath, extension string) map[string]FileInfo {
 	return files
 }
 
-// generateUnifiedDiff generates a proper unified diff using the system diff command
 func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) []string {
 	log.Printf("DEBUG: generateUnifiedDiff called for %s (old: %d lines, new: %d lines)", filepath.Base(oldPath), len(oldLines), len(newLines))
 	
-	// Write old and new content to temporary files
 	oldTempFile, err := os.CreateTemp("", "old-*.txt")
 	if err != nil {
 		log.Printf("Failed to create temp file for old content: %v", err)
@@ -912,32 +835,26 @@ func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) [
 	defer os.Remove(newTempFile.Name())
 	defer newTempFile.Close()
 	
-	// Write old content
 	for _, line := range oldLines {
 		oldTempFile.WriteString(line + "\n")
 	}
 	oldTempFile.Close()
 	
-	// Write new content
 	for _, line := range newLines {
 		newTempFile.WriteString(line + "\n")
 	}
 	newTempFile.Close()
 	
-	// Run diff -u command
 	cmd := exec.Command("diff", "-u", oldTempFile.Name(), newTempFile.Name())
 	output, err := cmd.CombinedOutput()
 	
-	// diff returns exit code 1 when files differ, which is expected
 	if err != nil && cmd.ProcessState.ExitCode() != 1 {
 		log.Printf("diff command failed: %v", err)
 		return []string{}
 	}
 	
-	// Parse diff output
 	lines := strings.Split(string(output), "\n")
 	
-	// Replace temp file names with actual file names
 	var result []string
 	for _, line := range lines {
 		if strings.HasPrefix(line, "---") {
@@ -955,41 +872,33 @@ func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) [
 
 
 
-// computeDiff computes the diff between two string slices using Myers algorithm
 func computeDiff(old, new []string, filename string) []string {
 	var result []string
 	
-	// Add file headers
 	result = append(result, fmt.Sprintf("--- a/%s", filename))
 	result = append(result, fmt.Sprintf("+++ b/%s", filename))
 	
-	// Find common prefix
 	commonPrefix := 0
 	for commonPrefix < len(old) && commonPrefix < len(new) && old[commonPrefix] == new[commonPrefix] {
 		commonPrefix++
 	}
 	
-	// Find common suffix
 	commonSuffix := 0
 	for commonSuffix < len(old)-commonPrefix && commonSuffix < len(new)-commonPrefix && 
 		old[len(old)-1-commonSuffix] == new[len(new)-1-commonSuffix] {
 		commonSuffix++
 	}
 	
-	// Process the middle part that differs
 	oldMiddle := old[commonPrefix : len(old)-commonSuffix]
 	newMiddle := new[commonPrefix : len(new)-commonSuffix]
 	
-	// Calculate line numbers for the hunk header
 	oldStart := commonPrefix + 1
 	oldCount := len(oldMiddle)
 	newStart := commonPrefix + 1
 	newCount := len(newMiddle)
 	
-	// Add hunk header with proper line numbers
 	result = append(result, fmt.Sprintf("@@ -%d,%d +%d,%d @@", oldStart, oldCount, newStart, newCount))
 	
-	// Add context lines before changes
 	if commonPrefix > 0 {
 		contextStart := max(0, commonPrefix-3)
 		for i := contextStart; i < commonPrefix; i++ {
@@ -997,9 +906,7 @@ func computeDiff(old, new []string, filename string) []string {
 		}
 	}
 	
-	// Process the differing middle section
 	if len(oldMiddle) > 0 || len(newMiddle) > 0 {
-		// Simple line-by-line comparison for the middle section
 		maxLines := max(len(oldMiddle), len(newMiddle))
 		
 		for i := 0; i < maxLines; i++ {
@@ -1012,10 +919,8 @@ func computeDiff(old, new []string, filename string) []string {
 			}
 			
 			if oldLine == newLine {
-				// Lines are equal
 				result = append(result, "  "+oldLine)
 			} else {
-				// Lines differ
 				if oldLine != "" {
 					result = append(result, "- "+oldLine)
 				}
@@ -1026,7 +931,6 @@ func computeDiff(old, new []string, filename string) []string {
 		}
 	}
 	
-	// Add context lines after changes
 	if commonSuffix > 0 {
 		contextEnd := min(len(old), commonPrefix+len(oldMiddle)+3)
 		for i := commonPrefix + len(oldMiddle); i < contextEnd; i++ {
@@ -1037,7 +941,6 @@ func computeDiff(old, new []string, filename string) []string {
 	return result
 }
 
-// max returns the maximum of two integers
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -1045,7 +948,6 @@ func max(a, b int) int {
 	return b
 }
 
-// min returns the minimum of two integers
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -1053,7 +955,6 @@ func min(a, b int) int {
 	return b
 }
 
-// parseAIResponseForVulnerabilities parses AI response to determine vulnerability status
 func parseAIResponseForVulnerabilities(aiResponse string) string {
 	lines := strings.Split(aiResponse, "\n")
 	vulnCount := 0
@@ -1069,7 +970,6 @@ func parseAIResponseForVulnerabilities(aiResponse string) string {
 		return fmt.Sprintf("AI: %d vulnerabilities", vulnCount)
 	}
 	
-	// Check for "not sure" indicators
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.Contains(strings.ToLower(line), "vulnerability existed: not sure") ||
@@ -1081,14 +981,12 @@ func parseAIResponseForVulnerabilities(aiResponse string) string {
 	return "AI: No vulnerabilities"
 }
 
-// determineSeverityFromAIResponse determines severity based on AI response
 func determineSeverityFromAIResponse(aiResponse string) string {
 	lines := strings.Split(aiResponse, "\n")
 	
 	for _, line := range lines {
 		line = strings.ToLower(strings.TrimSpace(line))
 		if strings.Contains(line, "vulnerability existed: yes") {
-			// Check for severity indicators
 			if strings.Contains(line, "critical") || strings.Contains(line, "high") {
 				return "high"
 			} else if strings.Contains(line, "medium") {
@@ -1096,14 +994,13 @@ func determineSeverityFromAIResponse(aiResponse string) string {
 			} else if strings.Contains(line, "low") {
 				return "low"
 			}
-			return "high" // Default to high if vulnerability exists
+			return "high"
 		}
 	}
 	
 	return "low"
 }
 
-// parseAICVEResponse parses AI CVE analysis response to determine if CVE matches
 func parseAICVEResponse(aiResponse string) string {
 	lines := strings.Split(aiResponse, "\n")
 	
@@ -1111,7 +1008,6 @@ func parseAICVEResponse(aiResponse string) string {
 		line = strings.TrimSpace(line)
 		lineLower := strings.ToLower(line)
 		
-		// Look for "Description Matches: Yes/No" format
 		if strings.Contains(lineLower, "description matches: yes") {
 			return "Yes"
 		}
@@ -1119,7 +1015,6 @@ func parseAICVEResponse(aiResponse string) string {
 			return "No"
 		}
 		
-		// Also check for other common formats
 		if strings.Contains(lineLower, "matches: yes") || strings.Contains(lineLower, "match: yes") {
 			return "Yes"
 		}
@@ -1128,11 +1023,9 @@ func parseAICVEResponse(aiResponse string) string {
 		}
 	}
 	
-	// Default to "No" if no clear match found
 	return "No"
 }
 
-// analyzeDiffsForVulnerabilities prepares all diffs for AI analysis
 func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	
@@ -1141,11 +1034,8 @@ func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) m
 			continue
 		}
 		
-		// Send ALL diffs to AI - no dumb keyword filtering
-		// AI is smart enough to find vulnerabilities without our help
 		contextLines := diff.Diff
 		
-		// Limit context lines to prevent oversized requests
 		if len(contextLines) > 1000 {
 			contextLines = contextLines[:1000]
 		}
@@ -1154,7 +1044,6 @@ func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) m
 			Context: contextLines,
 		}
 		
-		// Set initial vulnerability status (will be updated by AI analysis)
 		result.VulnerabilityStatus = "AI: Analyzing..."
 		result.VulnSeverity = "unknown"
 		
@@ -1164,11 +1053,9 @@ func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) m
 	return results
 }
 
-// runAIAnalysisOnResults runs AI analysis on the results with multithreading support
 func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, threadCount int) map[string]AnalysisResult {
 	log.Printf("Running REAL AI analysis on %d results with %d threads...", len(results), threadCount)
 	
-	// Check if config is loaded
 	if config == nil {
 		log.Printf("❌ AI config is nil - AI analysis will not work!")
 		return results
@@ -1183,12 +1070,10 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		log.Printf("✅ AI config loaded: service=%s", config.Service)
 	}
 	
-	// Limit thread count to reasonable bounds
 	if threadCount < 1 {
 		threadCount = 1
 	}
 	
-	// Prepare work items
 	type workItem struct {
 		filename string
 		result   AnalysisResult
@@ -1212,11 +1097,9 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 	
 	log.Printf("Processing %d files with %d threads", len(workItems), threadCount)
 	
-	// Create channels for work distribution
 	workChan := make(chan workItem, len(workItems))
 	resultChan := make(chan workItem, len(workItems))
 	
-	// Start worker goroutines
 	var wg sync.WaitGroup
 	for i := 0; i < threadCount; i++ {
 		wg.Add(1)
@@ -1225,16 +1108,13 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 			log.Printf("Worker %d started", workerID+1)
 			
 			for item := range workChan {
-				// Combine diff content for AI analysis
 				diffContent := strings.Join(item.result.Context, "\n")
 				
-				// Call real AI service
 				log.Printf("Worker %d: Calling AI analysis for %s...", workerID+1, item.filename)
 				aiResponse := GetAIAnalysis(item.filename, diffContent)
 				log.Printf("Worker %d: AI response for %s: %s", workerID+1, item.filename, aiResponse[:min(100, len(aiResponse))])
 				item.result.AIResponse = aiResponse
 				
-				// Update CVE analysis with AI-based matching
 				if cveIDs != "" {
 					cveList := strings.Split(cveIDs, ",")
 					if item.result.CVEMatches == nil {
@@ -1245,21 +1125,17 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 						if cveID != "" {
 							log.Printf("Worker %d: Running AI CVE analysis for %s...", workerID+1, cveID)
 							
-							// Step 1: Get CVE description from NVD
 							description := GetCVEDescription(cveID)
 							log.Printf("Worker %d: CVE description: %s", workerID+1, description[:min(100, len(description))])
 							
-							// Step 2: Get AI analysis of the diff (if not already done)
 							if item.result.AIResponse == "" {
 								item.result.AIResponse = GetAIAnalysis(item.filename, diffContent)
 								log.Printf("Worker %d: AI analysis: %s", workerID+1, item.result.AIResponse[:min(100, len(item.result.AIResponse))])
 							}
 							
-							// Step 3: Analyze AI response against CVE description
 							cveAnalysis := AnalyzeWithCVE(item.result.AIResponse, description)
 							log.Printf("Worker %d: AI CVE analysis: %s", workerID+1, cveAnalysis[:min(100, len(cveAnalysis))])
 							
-							// Parse AI response to determine if CVE matches
 							cveResult := parseAICVEResponse(cveAnalysis)
 							
 							item.result.CVEMatches[cveID] = CVEMatch{
@@ -1271,7 +1147,6 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 					}
 				}
 				
-				// Parse AI response to update vulnerability status
 				item.result.VulnerabilityStatus = parseAIResponseForVulnerabilities(aiResponse)
 				item.result.VulnSeverity = determineSeverityFromAIResponse(aiResponse)
 				
@@ -1283,7 +1158,6 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		}(i)
 	}
 	
-	// Send work items to workers
 	go func() {
 		for _, item := range workItems {
 			workChan <- item
@@ -1291,13 +1165,11 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		close(workChan)
 	}()
 	
-	// Collect results
 	go func() {
 		wg.Wait()
 		close(resultChan)
 	}()
 	
-	// Process completed results
 	completedCount := 0
 	for item := range resultChan {
 		results[item.filename] = item.result
@@ -1312,13 +1184,11 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 }
 
 
-// generateAIResponse generates an AI response for the analysis
 func generateAIResponse(filename string, result AnalysisResult, cveIDs string) string {
 	var response strings.Builder
 	
 	response.WriteString(fmt.Sprintf("AI Analysis for %s:\n\n", filename))
 	
-	// Analyze the vulnerability status
 	if strings.Contains(result.VulnerabilityStatus, "vulnerabilities") {
 		response.WriteString("🚨 VULNERABILITIES DETECTED\n")
 		response.WriteString("This file contains code changes that may introduce security vulnerabilities:\n")
@@ -1339,7 +1209,6 @@ func generateAIResponse(filename string, result AnalysisResult, cveIDs string) s
 		response.WriteString("- Code changes seem to follow security best practices\n\n")
 	}
 	
-	// Add CVE-specific analysis
 	if cveIDs != "" && result.CVEMatches != nil {
 		response.WriteString("🎯 CVE ANALYSIS RESULTS:\n")
 		for cveID, match := range result.CVEMatches {
@@ -1363,7 +1232,6 @@ func generateAIResponse(filename string, result AnalysisResult, cveIDs string) s
 }
 
 func runFolderAnalysis(params map[string]interface{}) map[string]AnalysisResult {
-	// This is a placeholder - implement the full folder analysis logic
 	log.Printf("Running folder analysis with params: %v", params)
 	
 	oldFolder, _ := params["old_folder"].(string)
@@ -1373,19 +1241,15 @@ func runFolderAnalysis(params map[string]interface{}) map[string]AnalysisResult 
 	enableAI, _ := params["enable_ai"].(string)
 	cveIDs, _ := params["cve_ids"].(string)
 
-	// Parse keywords
 	var keywords []string
 	if specialKeywords != "" {
 		keywords = strings.Split(specialKeywords, ",")
 	}
 
-	// Compare folders
 	diffs := compareFolders(oldFolder, newFolder, extension, keywords)
 	
-	// Analyze diffs
 	results := analyzeDiffsWithKeywords(diffs, keywords)
 
-	// Run AI analysis if enabled
 	if enableAI == "on" && len(results) > 0 {
 		results = processAIAnalysis(results, diffs, cveIDs)
 	}
@@ -1396,20 +1260,17 @@ func runFolderAnalysis(params map[string]interface{}) map[string]AnalysisResult 
 func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) []DiffFile {
 	log.Printf("Comparing folders: %s -> %s", oldFolder, newFolder)
 	
-	// Get all files from both folders
 	oldFiles := getFilesRecursive(oldFolder)
 	newFiles := getFilesRecursive(newFolder)
 	
 	log.Printf("Found %d files in old folder, %d files in new folder", len(oldFiles), len(newFiles))
 	
-	// Find common, added, and deleted files
 	commonFiles := intersectFiles(oldFiles, newFiles)
 	deletedFiles := subtractFiles(oldFiles, newFiles)
 	addedFiles := subtractFiles(newFiles, oldFiles)
 	
 	log.Printf("Common: %d, Added: %d, Deleted: %d files", len(commonFiles), len(addedFiles), len(deletedFiles))
 	
-	// Apply extension filter if provided
 	if extFilter != "" {
 		exts := parseExtensions(extFilter)
 		commonFiles = filterByExtensions(commonFiles, exts)
@@ -1420,7 +1281,6 @@ func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) [
 	
 	var diffs []DiffFile
 	
-	// Process modified files
 	for _, file := range commonFiles {
 		oldPath := filepath.Join(oldFolder, file)
 		newPath := filepath.Join(newFolder, file)
@@ -1432,11 +1292,9 @@ func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) [
 			continue
 		}
 		
-		// Generate unified diff
 		diffLines := generateUnifiedDiff(oldLines, newLines, oldPath, newPath)
 		
 		if len(diffLines) > 0 {
-			// Check keyword filter
 			if shouldIncludeDiff(diffLines, keywords) {
 				diffs = append(diffs, DiffFile{
 					Filename: file,
@@ -1447,13 +1305,11 @@ func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) [
 		}
 	}
 	
-	// Process deleted files
 	for _, file := range deletedFiles {
 		oldPath := filepath.Join(oldFolder, file)
 		oldLines, _ := readFileLines(oldPath)
 		
 		if len(oldLines) > 0 {
-			// Check keyword filter
 			if shouldIncludeFile(oldLines, keywords) {
 				diffLines := []string{
 					fmt.Sprintf("--- %s", oldPath),
@@ -1473,13 +1329,11 @@ func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) [
 		}
 	}
 	
-	// Process added files
 	for _, file := range addedFiles {
 		newPath := filepath.Join(newFolder, file)
 		newLines, _ := readFileLines(newPath)
 		
 		if len(newLines) > 0 {
-			// Check keyword filter
 			if shouldIncludeFile(newLines, keywords) {
 				diffLines := []string{
 					"--- /dev/null",
@@ -1503,7 +1357,6 @@ func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) [
 	return diffs
 }
 
-// Helper functions for compareFolders
 func getFilesRecursive(folder string) []string {
 	var files []string
 	filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
@@ -1579,10 +1432,8 @@ func analyzeDiffsWithKeywords(diffs []DiffFile, keywords []string) map[string]An
 	results := make(map[string]AnalysisResult)
 
 	for _, diff := range diffs {
-		// Send ALL diffs to AI - keyword filtering is pointless
 		contextLines := diff.Diff
 		
-		// Limit context lines to prevent oversized requests
 		if len(contextLines) > 1000 {
 			contextLines = contextLines[:1000]
 		}
@@ -1611,12 +1462,10 @@ func processAIAnalysis(results map[string]AnalysisResult, diffs []DiffFile, cveI
 
 		result := results[diff.Filename]
 		
-		// Get AI analysis
 		diffContent := strings.Join(diff.Diff, "\n")
 		aiResponse := GetAIAnalysis(diff.Filename, diffContent)
 		result.AIResponse = aiResponse
 
-		// Analyze CVEs if provided
 		if cveIDs != "" {
 			cveMatches := make(map[string]CVEMatch)
 			for _, cveID := range strings.Split(cveIDs, ",") {
@@ -1628,7 +1477,6 @@ func processAIAnalysis(results map[string]AnalysisResult, diffs []DiffFile, cveI
 				cveDescription := GetCVEDescription(cveID)
 				cveAnalysis := AnalyzeWithCVE(aiResponse, cveDescription)
 				
-				// Parse result
 				match := "Unknown"
 				if strings.Contains(strings.ToLower(cveAnalysis), "description matches: yes") {
 					match = "Yes"
@@ -1644,12 +1492,10 @@ func processAIAnalysis(results map[string]AnalysisResult, diffs []DiffFile, cveI
 			result.CVEMatches = cveMatches
 		}
 
-		// Determine vulnerability status
 		vulnStatus := "AI: No vulnerabilities"
 		severity := "no"
 		
 		if strings.Contains(strings.ToLower(aiResponse), "vulnerability existed") {
-			// Count yes responses
 			yesCount := strings.Count(strings.ToLower(aiResponse), "yes")
 			if yesCount > 0 {
 				vulnStatus = fmt.Sprintf("AI: %d vulnerabilities", yesCount)
@@ -1689,181 +1535,4 @@ func updateAnalysisStatus(analysisPath, status, errorMsg string) {
 	os.WriteFile(analysisPath, updatedData, 0644)
 }
 
-// runAIBenchmark runs an AI benchmark
-func runAIBenchmark(benchmarkID string, benchmarkData map[string]interface{}) {
-	resultsPath := filepath.Join("saved_analyses", fmt.Sprintf("benchmark_%s.json", benchmarkID))
-
-	result := BenchmarkResult{
-		BenchmarkID: benchmarkID,
-		Status:      "running",
-		CreatedAt:   time.Now(),
-		Config:      benchmarkData,
-		Results:     make(map[string][]QuestionResult),
-		Metrics:     make(map[string]BenchmarkMetrics),
-	}
-
-	// Save initial state
-	data, _ := json.MarshalIndent(result, "", "  ")
-	os.WriteFile(resultsPath, data, 0644)
-
-	log.Printf("Running AI benchmark %s", benchmarkID)
-
-	// Get benchmark parameters
-	questions, _ := benchmarkData["questions"].([]interface{})
-	aiConfigs, _ := benchmarkData["ai_configs"].(map[string]interface{})
-	
-	if len(questions) == 0 {
-		result.Status = "failed"
-		result.Error = "No questions provided"
-		data, _ := json.MarshalIndent(result, "", "  ")
-		os.WriteFile(resultsPath, data, 0644)
-		return
-	}
-
-	totalTests := len(aiConfigs) * len(questions)
-	currentTest := 0
-
-	// Run tests for each AI config
-	for aiName, aiConfigData := range aiConfigs {
-		aiConfigMap, ok := aiConfigData.(map[string]interface{})
-		if !ok {
-			log.Printf("Invalid AI config for %s", aiName)
-			continue
-		}
-
-		var aiResults []QuestionResult
-
-		for i, questionData := range questions {
-			currentTest++
-			progress := float64(currentTest) / float64(totalTests) * 100
-			result.Progress = progress
-			result.CurrentTest = fmt.Sprintf("Testing %s - Question %d/%d", aiName, i+1, len(questions))
-
-			// Save progress
-			data, _ := json.MarshalIndent(result, "", "  ")
-			os.WriteFile(resultsPath, data, 0644)
-
-			questionMap, ok := questionData.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			question, _ := questionMap["question"].(string)
-			expectedAnswer, _ := questionMap["expected_answer"].(string)
-
-			// Get AI response
-			startTime := time.Now()
-			aiResponse := getAIResponseForBenchmark(question, aiConfigMap)
-			responseTime := time.Since(startTime).Seconds()
-
-			// Calculate accuracy (simple word overlap for now)
-			accuracyScore := calculateAccuracy(aiResponse, expectedAnswer)
-
-			questionResult := QuestionResult{
-				QuestionID:     i,
-				Question:       question,
-				ExpectedAnswer: expectedAnswer,
-				AIResponse:     aiResponse,
-				ResponseTime:   responseTime,
-				ResponseLength: len(strings.Fields(aiResponse)),
-				AccuracyScore:  accuracyScore,
-				AccuracyBinary: accuracyScore > 0.7,
-			}
-
-			aiResults = append(aiResults, questionResult)
-		}
-
-		result.Results[aiName] = aiResults
-	}
-
-	// Calculate metrics
-	result.Metrics = calculateBenchmarkMetrics(result.Results)
-	result.Status = "completed"
-	result.Progress = 100.0
-	result.CurrentTest = "Benchmark completed successfully"
-
-	// Save final state
-	data, _ = json.MarshalIndent(result, "", "  ")
-	os.WriteFile(resultsPath, data, 0644)
-	log.Printf("Benchmark %s completed", benchmarkID)
-}
-
-func getAIResponseForBenchmark(question string, aiConfig map[string]interface{}) string {
-	// For demo mode, return quickly
-	if demoMode, ok := aiConfig["demo_mode"].(bool); ok && demoMode {
-		return fmt.Sprintf("Mock response for: %s", question[:min(50, len(question))])
-	}
-
-	// Use the existing AI client
-	if config == nil {
-		return "AI configuration not loaded"
-	}
-
-	client := NewAIServiceClient(config)
-	return client.GenerateResponse(question)
-}
-
-func calculateAccuracy(aiResponse, expectedAnswer string) float64 {
-	if aiResponse == "" || expectedAnswer == "" {
-		return 0.0
-	}
-
-	// Simple word overlap calculation
-	expectedWords := strings.Fields(strings.ToLower(expectedAnswer))
-	responseWords := strings.Fields(strings.ToLower(aiResponse))
-
-	if len(expectedWords) == 0 {
-		return 0.5
-	}
-
-	wordSet := make(map[string]bool)
-	for _, word := range responseWords {
-		wordSet[word] = true
-	}
-
-	overlap := 0
-	for _, word := range expectedWords {
-		if wordSet[word] {
-			overlap++
-		}
-	}
-
-	return float64(overlap) / float64(len(expectedWords))
-}
-
-func calculateBenchmarkMetrics(results map[string][]QuestionResult) map[string]BenchmarkMetrics {
-	metrics := make(map[string]BenchmarkMetrics)
-
-	for aiName, aiResults := range results {
-		if len(aiResults) == 0 {
-			continue
-		}
-
-		var totalResponseTime float64
-		var totalResponseLength int
-		var totalAccuracy float64
-		correctAnswers := 0
-
-		for _, result := range aiResults {
-			totalResponseTime += result.ResponseTime
-			totalResponseLength += result.ResponseLength
-			totalAccuracy += result.AccuracyScore
-			if result.AccuracyBinary {
-				correctAnswers++
-			}
-		}
-
-		metrics[aiName] = BenchmarkMetrics{
-			TotalQuestions:     len(aiResults),
-			AvgResponseTime:    totalResponseTime / float64(len(aiResults)),
-			AvgResponseLength:  float64(totalResponseLength) / float64(len(aiResults)),
-			AvgAccuracyScore:   totalAccuracy / float64(len(aiResults)),
-			AccuracyRate:       float64(correctAnswers) / float64(len(aiResults)),
-			CorrectAnswers:     correctAnswers,
-			TotalResponseTime:  totalResponseTime,
-		}
-	}
-
-	return metrics
-}
 
