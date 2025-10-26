@@ -158,23 +158,41 @@ func initializeDirectories() {
 }
 
 func printBanner(username, password, host string, port, aiThreads int) {
+	serverURL := fmt.Sprintf("http://%s:%d", host, port)
+	aiThreadsStr := fmt.Sprintf("%d", aiThreads)
+	maxWidth := 67
+	
+	// Create properly aligned lines
+	urlLine := fmt.Sprintf("║  Server URL:  %s", serverURL)
+	threadsLine := fmt.Sprintf("║  AI Threads:  %s", aiThreadsStr)
+
+	for len(urlLine) < maxWidth {
+		urlLine += " "
+	}
+	urlLine += "║"
+	
+	for len(threadsLine) < maxWidth {
+		threadsLine += " "
+	}
+	threadsLine += "║"
+	
 	banner := fmt.Sprintf(`
 ╔════════════════════════════════════════════════════════════════╗
 ║                      PatchLeaks Started                        ║
 ╠════════════════════════════════════════════════════════════════╣
-║  Server URL:  http://%s:%-5d                                   ║
-║  AI Threads:  %-5d                                             ║
+%s
+%s
 ║                                                                ║
 ║  Basic Authentication Credentials:                             ║
 ║  ┌────────────────────────────────────────────────────────┐    ║
-║  │ Username: %-32s │                                      │    ║
-║  │ Password: %-32s │                                      |    ║
+║  │ Username: %-32s │           │    ║
+║  │ Password: %-32s │           |    ║
 ║  └────────────────────────────────────────────────────────┘    ║
 ║                                                                ║
 ║  IMPORTANT: Save these credentials!                            ║
 ║  They are randomly generated each time the app starts.         ║
 ╚════════════════════════════════════════════════════════════════╝
-`, host, port, aiThreads, username, password)
+`, urlLine, threadsLine, username, password)
 
 	fmt.Println(banner)
 }
