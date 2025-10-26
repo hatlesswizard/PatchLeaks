@@ -9,7 +9,6 @@ const (
 	AIConfigFile = "ai_config.json"
 )
 
-// Config represents the AI configuration
 type Config struct {
 	Service    string                 `json:"service"`
 	Ollama     map[string]interface{} `json:"ollama"`
@@ -20,7 +19,6 @@ type Config struct {
 	Prompts    map[string]string      `json:"prompts"`
 }
 
-// LoadConfig loads the AI configuration from file
 func LoadConfig() (*Config, error) {
 	data, err := os.ReadFile(AIConfigFile)
 	if err != nil {
@@ -32,7 +30,6 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	// Ensure all fields are populated
 	defaultConfig := DefaultConfig()
 	if config.Ollama == nil {
 		config.Ollama = defaultConfig.Ollama
@@ -53,7 +50,6 @@ func LoadConfig() (*Config, error) {
 	return &config, nil
 }
 
-// Save saves the configuration to file
 func (c *Config) Save() error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -62,7 +58,6 @@ func (c *Config) Save() error {
 	return os.WriteFile(AIConfigFile, data, 0644)
 }
 
-// GetServiceConfig returns the configuration for a specific service
 func (c *Config) GetServiceConfig(service string) (map[string]interface{}, bool) {
 	switch service {
 	case "ollama":
@@ -78,7 +73,6 @@ func (c *Config) GetServiceConfig(service string) (map[string]interface{}, bool)
 	}
 }
 
-// DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
 		Service: "ollama",
@@ -109,7 +103,6 @@ func DefaultConfig() *Config {
 	}
 }
 
-// DefaultPrompts returns the default prompts
 func DefaultPrompts() map[string]string {
 	return map[string]string{
 		"main_analysis": `Analyze the provided code diff for security fixes.
