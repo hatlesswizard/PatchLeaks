@@ -17,23 +17,20 @@ const (
 	MaxBackoffTime   = 60
 )
 
-// AIServiceClient handles AI service requests
 type AIServiceClient struct {
 	config  *Config
 	service string
 	timeout time.Duration
 }
 
-// NewAIServiceClient creates a new AI service client
 func NewAIServiceClient(config *Config) *AIServiceClient {
 	return &AIServiceClient{
 		config:  config,
 		service: config.Service,
-		timeout: 0, // No timeout by default
+		timeout: 0,
 	}
 }
 
-// GenerateResponse generates an AI response for the given prompt
 func (client *AIServiceClient) GenerateResponse(prompt string) string {
 	temperature, _ := client.config.Parameters["temperature"].(float64)
 	maxTokens, _ := client.config.Parameters["num_ctx"].(int)
@@ -59,7 +56,6 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 		}
 
 		if err != nil {
-			// Check for rate limiting
 			if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate limit") {
 				backoff := calculateBackoff(retry)
 				log.Printf("Rate limited, backing off for %v seconds", backoff)
@@ -67,7 +63,6 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 				continue
 			}
 
-			// For other errors, retry with backoff
 			if retry < MaxRetryAttempts-1 {
 				backoff := calculateBackoff(retry)
 				time.Sleep(time.Duration(backoff) * time.Second)
@@ -191,7 +186,6 @@ func (client *AIServiceClient) openAIRequest(prompt string, temperature float64,
 }
 
 func (client *AIServiceClient) deepSeekRequest(prompt string, temperature float64, maxTokens int) (string, error) {
-	// DeepSeek uses OpenAI-compatible API
 	baseURL, _ := client.config.DeepSeek["base_url"].(string)
 	model, _ := client.config.DeepSeek["model"].(string)
 	apiKey, _ := client.config.DeepSeek["key"].(string)
@@ -322,7 +316,6 @@ func calculateBackoff(retryCount int) int {
 	return backoff
 }
 
-// GetAIAnalysis gets AI analysis for a file diff
 func GetAIAnalysis(filePath, diffContent string) string {
 	if config == nil {
 		return "AI configuration not loaded"
@@ -335,24 +328,20 @@ func GetAIAnalysis(filePath, diffContent string) string {
 	return client.GenerateResponse(prompt)
 }
 
-// GetAICVEAnalysis performs AI-based CVE analysis
 func GetAICVEAnalysis(filePath, diffContent, cveID, cveDescription string) string {
 	if config == nil {
 		return "AI configuration not loaded"
 	}
 
-	// Create CVE-specific prompt
 	prompt := strings.ReplaceAll(config.Prompts["cve_analysis"], "{ai_response}", "Analyzing code changes for CVE match")
 	prompt = strings.ReplaceAll(prompt, "{cve_description}", cveDescription)
 	
-	// Add context about the file and changes
 	fullPrompt := fmt.Sprintf("File: %s\n\nDiff Content:\n%s\n\n%s", filePath, diffContent, prompt)
 
 	client := NewAIServiceClient(config)
 	return client.GenerateResponse(fullPrompt)
 }
 
-// GetCVEDescription fetches CVE description from NVD
 func GetCVEDescription(cveID string) string {
 	url := fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", cveID)
 	
@@ -374,7 +363,6 @@ func GetCVEDescription(cveID string) string {
 		return fmt.Sprintf("Failed to fetch CVE description: HTTP %d", resp.StatusCode)
 	}
 
-	// Read the HTML response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Sprintf("Failed to read CVE description: %v", err)
@@ -382,40 +370,32 @@ func GetCVEDescription(cveID string) string {
 	
 	bodyStr := string(body)
 	
-	// Look for the vuln-description element
-	// The NVD page has: <p data-testid="vuln-description">description text</p>
 	startMarker := `data-testid="vuln-description"`
 	startIdx := strings.Index(bodyStr, startMarker)
 	if startIdx == -1 {
 		return "CVE description not found on page"
 	}
 	
-	// Find the opening tag
 	openTagStart := strings.Index(bodyStr[startIdx:], ">")
 	if openTagStart == -1 {
 		return "CVE description format not recognized"
 	}
 	
-	// Find the start of the description text
 	descStart := startIdx + openTagStart + 1
 	
-	// Find the closing </p> tag
 	closeTagStart := strings.Index(bodyStr[descStart:], "</p>")
 	if closeTagStart == -1 {
 		return "CVE description closing tag not found"
 	}
 	
-	// Extract the description
 	description := strings.TrimSpace(bodyStr[descStart:descStart+closeTagStart])
 	
-	// Clean up HTML entities and extra whitespace
 	description = strings.ReplaceAll(description, "&amp;", "&")
 	description = strings.ReplaceAll(description, "&lt;", "<")
 	description = strings.ReplaceAll(description, "&gt;", ">")
 	description = strings.ReplaceAll(description, "&quot;", "\"")
 	description = strings.ReplaceAll(description, "&#39;", "'")
 	
-	// Remove extra whitespace
 	description = strings.ReplaceAll(description, "\n", " ")
 	description = strings.ReplaceAll(description, "\t", " ")
 	for strings.Contains(description, "  ") {
@@ -429,7 +409,6 @@ func GetCVEDescription(cveID string) string {
 	return description
 }
 
-// AnalyzeWithCVE analyzes AI response against CVE description
 func AnalyzeWithCVE(aiResponse, cveDescription string) string {
 	if config == nil {
 		return "AI configuration not loaded"
