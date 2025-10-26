@@ -17,17 +17,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// isHeaderWritten checks if HTTP headers have already been written
 func isHeaderWritten(w http.ResponseWriter) bool {
-	// Simple check - in practice, we can use a custom ResponseWriter wrapper
-	// For now, we'll use a simple approach
-	return false // Assume headers not written for simplicity
+	return false
 }
 
 var templates *template.Template
 
 func init() {
-	// Define custom template functions
 	funcMap := template.FuncMap{
 		"hasPrefix": strings.HasPrefix,
 		"hasSuffix": strings.HasSuffix,
@@ -68,7 +64,6 @@ func init() {
 		},
 	}
 	
-	// Parse templates one by one for better error reporting
 	log.Println("========================================")
 	log.Println("Parsing templates...")
 	log.Println("========================================")
@@ -107,7 +102,7 @@ func init() {
 		log.Println("========================================")
 		log.Printf("Templates will need to be converted from Jinja2 to Go syntax")
 		log.Printf("See TEMPLATE_EXAMPLES.md for conversion guide")
-		templates = nil // Set to nil so templatesLoaded() returns false
+		templates = nil
 	} else {
 		log.Println("========================================")
 		log.Println("✅ All templates parsed successfully!")
@@ -115,12 +110,10 @@ func init() {
 	}
 }
 
-// Helper to check if templates are loaded
 func templatesLoaded() bool {
 	return templates != nil
 }
 
-// Index handler - home page
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if !templatesLoaded() {
 		http.Error(w, `Templates not loaded. Please convert templates from Jinja2 to Go syntax.
@@ -136,7 +129,6 @@ Example: Replace {% for item in items %} with {{range .Items}}`, http.StatusInte
 	}
 }
 
-// View analysis handler
 func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	analysisID := vars["id"]
@@ -159,7 +151,6 @@ func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse query parameters for pagination
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
 		page = 1
@@ -173,13 +164,10 @@ func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	if filterType == "" {
 		filterType = "all"
 	}
-	// Show ALL results - let frontend JavaScript handle filtering like Flask version
 	paginatedResults := analysis.Results
 
-	// No pagination - show all results like Flask version
 	var pagination *Pagination
 
-	// Create indexed results for templates that need loop.index
 	type IndexedResult struct {
 		Index    int
 		Filename string
@@ -188,17 +176,15 @@ func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	indexedResults := []IndexedResult{}
 	idx := 0
 	
-	// Create sorted keys for consistent ordering
 	var sortedKeys []string
 	for filename := range paginatedResults {
 		sortedKeys = append(sortedKeys, filename)
 	}
 	sort.Strings(sortedKeys)
 	
-	// Use paginated results for consistent indexing
 	for _, filename := range sortedKeys {
 		indexedResults = append(indexedResults, IndexedResult{
-			Index:    idx, // Index for current result
+			Index:    idx,
 			Filename: filename,
 			Result:   paginatedResults[filename],
 		})
@@ -229,11 +215,9 @@ func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "analysis.html", templateData); err != nil {
 		log.Printf("Error rendering analysis.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
 	}
 }
 
-// Save analysis handler
 func saveAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	var requestData map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
@@ -304,7 +288,6 @@ func saveAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"id": analysisID})
 }
 
-// Delete analysis handler
 func deleteAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	analysisID := vars["id"]
@@ -322,7 +305,6 @@ func deleteAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/reports", http.StatusSeeOther)
 }
 
-// Products handler
 func productsHandler(w http.ResponseWriter, r *http.Request) {
 	productsData := loadProducts()
 	productsList := make([]string, 0, len(productsData))
@@ -396,7 +378,6 @@ func productsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Folder handler
 func folderHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -452,15 +433,12 @@ func folderHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "folder.html", data); err != nil {
 		log.Printf("Error rendering folder.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
 	}
 }
 
-// Reports handler
 func reportsHandler(w http.ResponseWriter, r *http.Request) {
 	reports := loadAllAnalyses()
 	
-	// Add VulnCount to each report
 	for i := range reports {
 		reports[i].VulnCount = countVulnerabilities(reports[i].Results)
 	}
@@ -475,11 +453,9 @@ func reportsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "reports.html", data); err != nil {
 		log.Printf("Error rendering reports.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
 	}
 }
 
-// Manage products handler
 func manageProductsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -487,7 +463,6 @@ func manageProductsHandler(w http.ResponseWriter, r *http.Request) {
 		repoURL := validateInput(r.FormValue("repo_url"), 200)
 
 		if productName == "" || repoURL == "" || !validateURL(repoURL) {
-			// Render with error
 			products := loadProducts()
 			data := struct {
 				Products      map[string]Product
@@ -540,11 +515,9 @@ func manageProductsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "manage_products.html", data); err != nil {
 		log.Printf("Error rendering manage_products.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
 	}
 }
 
-// Delete product handler
 func deleteProductHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	productName := validateInput(vars["name"], 100)
@@ -561,7 +534,6 @@ func deleteProductHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/manage-products", http.StatusSeeOther)
 }
 
-// Get versions handler
 func getVersionsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	product := validateInput(vars["product"], 100)
@@ -595,7 +567,6 @@ func getVersionsHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, []string{})
 }
 
-// AI Settings handler
 func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -604,7 +575,6 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		temperature, _ := strconv.ParseFloat(r.FormValue("temperature"), 64)
 		numCtx, _ := strconv.Atoi(r.FormValue("num_ctx"))
 
-		// Clamp values
 		if temperature < 0 {
 			temperature = 0
 		} else if temperature > 2 {
@@ -665,11 +635,9 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "ai_settings.html", data); err != nil {
 		log.Printf("Error rendering ai_settings.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
 	}
 }
 
-// Reset prompts handler
 func resetPromptsHandler(w http.ResponseWriter, r *http.Request) {
 	if config != nil {
 		config.Prompts = DefaultPrompts()
@@ -678,7 +646,6 @@ func resetPromptsHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/ai-settings", http.StatusSeeOther)
 }
 
-// Library handler
 func libraryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -708,11 +675,9 @@ func libraryHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "library.html", data); err != nil {
 		log.Printf("Error rendering library.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
 	}
 }
 
-// Delete library repo handler
 func deleteLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoID := vars["id"]
@@ -724,7 +689,6 @@ func deleteLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
 
-// Toggle library repo handler
 func toggleLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoID := vars["id"]
@@ -736,151 +700,18 @@ func toggleLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
 
-// Check versions now handler
 func checkVersionsNowHandler(w http.ResponseWriter, r *http.Request) {
 	go checkForNewVersions()
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
 
-// AI Benchmark handler
-func aiBenchmarkHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		var benchmarkData map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&benchmarkData); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON data"})
-			return
-		}
 
-		benchmarkID := uuid.New().String()
-		go runAIBenchmark(benchmarkID, benchmarkData)
-
-		respondJSON(w, http.StatusOK, map[string]string{
-			"benchmark_id": benchmarkID,
-			"status":       "started",
-		})
-		return
-	}
-
-	// Load benchmark results
-	benchmarkResults := loadBenchmarkResults()
-
-	data := struct {
-		BenchmarkResults []BenchmarkResult
-	}{
-		BenchmarkResults: benchmarkResults,
-	}
-
-	if err := templates.ExecuteTemplate(w, "ai_benchmark.html", data); err != nil {
-		log.Printf("Error rendering ai_benchmark.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
-	}
-}
-
-// Benchmark results handler
-func benchmarkResultsHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	benchmarkID := vars["id"]
-
-	if !isValidUUID(benchmarkID) {
-		http.Error(w, "Invalid benchmark ID", http.StatusNotFound)
-		return
-	}
-
-	resultsPath := filepath.Join("saved_analyses", fmt.Sprintf("benchmark_%s.json", benchmarkID))
-	data, err := os.ReadFile(resultsPath)
-	if err != nil {
-		// Benchmark still running
-		data := struct {
-			BenchmarkID string
-			Status      string
-		}{
-			BenchmarkID: benchmarkID,
-			Status:      "running",
-		}
-		templates.ExecuteTemplate(w, "benchmark_results.html", data)
-		return
-	}
-
-	var results BenchmarkResult
-	json.Unmarshal(data, &results)
-
-	data2 := struct {
-		BenchmarkID string
-		Results     BenchmarkResult
-		Status      string
-	}{
-		BenchmarkID: benchmarkID,
-		Results:     results,
-		Status:      results.Status,
-	}
-
-	if err := templates.ExecuteTemplate(w, "benchmark_results.html", data2); err != nil {
-		log.Printf("Error rendering benchmark_results.html: %v", err)
-		// Don't call http.Error here as it causes superfluous WriteHeader
-	}
-}
-
-// Benchmark status handler
-func benchmarkStatusHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	benchmarkID := vars["id"]
-
-	if !isValidUUID(benchmarkID) {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid benchmark ID"})
-		return
-	}
-
-	resultsPath := filepath.Join("saved_analyses", fmt.Sprintf("benchmark_%s.json", benchmarkID))
-	data, err := os.ReadFile(resultsPath)
-	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{
-			"status": "not_found",
-			"error":  "Benchmark not found",
-		})
-		return
-	}
-
-	var results BenchmarkResult
-	json.Unmarshal(data, &results)
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"status":       results.Status,
-		"progress":     results.Progress,
-		"current_test": results.CurrentTest,
-		"error":        results.Error,
-	})
-}
-
-// Delete benchmark handler
-func deleteBenchmarkHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	benchmarkID := vars["id"]
-
-	if !isValidUUID(benchmarkID) {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid benchmark ID"})
-		return
-	}
-
-	benchmarkPath := filepath.Join("saved_analyses", fmt.Sprintf("benchmark_%s.json", benchmarkID))
-	if err := os.Remove(benchmarkPath); err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Benchmark not found"})
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "Benchmark deleted successfully",
-	})
-}
-
-// Helper function to respond with JSON
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(data)
 }
 
-// Helper function to validate UUID
 func isValidUUID(u string) bool {
 	_, err := uuid.Parse(u)
 	return err == nil
