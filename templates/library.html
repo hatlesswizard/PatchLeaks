@@ -893,6 +893,7 @@ pre {
             </div>
         </div>
 
+        <!-- Flash Messages -->
         {{if .FlashMessages}}
                 <div class="container mb-4">
                     {{range .FlashMessages}}
@@ -908,6 +909,7 @@ pre {
         <div class="card shadow">
             <div class="card-body p-4">
 
+                <!-- Add Repository Form -->
                 <div class="card mb-4">
                         <div class="card-header">
                             <h5 class="card-title mb-0">
@@ -928,7 +930,7 @@ pre {
                                         <div class="mb-3">
                                             <label for="repo_url" class="form-label">Repository URL</label>
                                             <input type="url" class="form-control" id="repo_url" name="repo_url" 
-                                                   placeholder="https:
+                                                   placeholder="https://github.com/owner/repo" required>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
@@ -962,6 +964,7 @@ pre {
                         </div>
                     </div>
 
+                    <!-- Repository List -->
                     {{if .LibraryRepos}}
                         <div class="row">
                             {{range .LibraryRepos}}
@@ -982,6 +985,9 @@ pre {
                                             </div>
                                             <div class="repo-actions">
                                                 {{if .CPE}}
+                                                <a href="/cve-analysis?repo_name={{.Name}}&repo_url={{.RepoURL}}&cpe={{.CPE}}" class="btn btn-sm btn-info">
+                                                    <i class="fas fa-shield-alt me-1"></i>CVE Analysis
+                                                </a>
                                                 {{end}}
                                                 <form method="POST" action="/library/toggle/{{.ID}}" class="d-inline">
                                                     <button type="submit" class="btn btn-sm btn-{{if .AutoScan}}warning{{else}}success{{end}}">
