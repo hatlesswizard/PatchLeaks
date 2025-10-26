@@ -162,16 +162,16 @@ func printBanner(username, password, host string, port, aiThreads int) {
 ╔════════════════════════════════════════════════════════════════╗
 ║                      PatchLeaks Started                        ║
 ╠════════════════════════════════════════════════════════════════╣
-║  Server URL:  http://%s:%-5d                         
-║  AI Threads:  %-5d                                            
+║  Server URL:  http://%s:%-5d                                   ║
+║  AI Threads:  %-5d                                             ║
 ║                                                                ║
 ║  Basic Authentication Credentials:                             ║
-║  ┌────────────────────────────────────────────────────────┐   ║
-║  │ Username: %-32s │   ║
-║  │ Password: %-32s │   ║
-║  └────────────────────────────────────────────────────────┘   ║
+║  ┌────────────────────────────────────────────────────────┐    ║
+║  │ Username: %-32s │                                      │    ║
+║  │ Password: %-32s │                                      |    ║
+║  └────────────────────────────────────────────────────────┘    ║
 ║                                                                ║
-║  ⚠️  IMPORTANT: Save these credentials!                        ║
+║  IMPORTANT: Save these credentials!                            ║
 ║  They are randomly generated each time the app starts.         ║
 ╚════════════════════════════════════════════════════════════════╝
 `, host, port, aiThreads, username, password)
