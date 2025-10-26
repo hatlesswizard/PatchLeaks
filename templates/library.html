@@ -984,11 +984,6 @@ pre {
                                                 </div>
                                             </div>
                                             <div class="repo-actions">
-                                                {{if .CPE}}
-                                                <a href="/cve-analysis?repo_name={{.Name}}&repo_url={{.RepoURL}}&cpe={{.CPE}}" class="btn btn-sm btn-info">
-                                                    <i class="fas fa-shield-alt me-1"></i>CVE Analysis
-                                                </a>
-                                                {{end}}
                                                 <form method="POST" action="/library/toggle/{{.ID}}" class="d-inline">
                                                     <button type="submit" class="btn btn-sm btn-{{if .AutoScan}}warning{{else}}success{{end}}">
                                                         <i class="fas fa-{{if .AutoScan}}pause{{else}}play{{end}} me-1"></i>
