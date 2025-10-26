@@ -11,7 +11,7 @@
   },
   "deepseek": {
     "base_url": "https://api.deepseek.com/v1",
-    "key": "sk-00fdf79d96e84778a3df3e40ef1b9168",
+    "key": "",
     "model": "deepseek-chat"
   },
   "claude": {
