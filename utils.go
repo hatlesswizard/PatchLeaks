@@ -21,18 +21,15 @@ const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0"
 )
 
-// validateInput validates and sanitizes input strings
 func validateInput(input interface{}, maxLength int) string {
 	str, ok := input.(string)
 	if !ok || str == "" {
 		return ""
 	}
 
-	// Remove control characters
 	re := regexp.MustCompile(`[\x00-\x1f\x7f-\x9f]`)
 	clean := re.ReplaceAllString(str, "")
 
-	// Truncate if too long
 	if len(clean) > maxLength {
 		clean = clean[:maxLength]
 	}
@@ -40,13 +37,11 @@ func validateInput(input interface{}, maxLength int) string {
 	return strings.TrimSpace(clean)
 }
 
-// validatePrompt validates prompt strings
 func validatePrompt(input string, maxLength int) string {
 	if input == "" {
 		return ""
 	}
 
-	// Remove problematic control characters but keep newlines and tabs
 	re := regexp.MustCompile(`[\x00\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]`)
 	clean := re.ReplaceAllString(input, "")
 
@@ -57,7 +52,6 @@ func validatePrompt(input string, maxLength int) string {
 	return strings.TrimSpace(clean)
 }
 
-// validateURL validates a GitHub URL
 func validateURL(url string) bool {
 	if url == "" {
 		return false
@@ -66,7 +60,6 @@ func validateURL(url string) bool {
 	return strings.HasPrefix(url, "https://github.com/") || strings.HasPrefix(url, "http://github.com/")
 }
 
-// validateVersion validates a version string
 func validateVersion(version string) bool {
 	if version == "" {
 		return false
@@ -75,7 +68,6 @@ func validateVersion(version string) bool {
 	return matched && len(version) <= 50
 }
 
-// loadProducts loads products from file
 func loadProducts() map[string]Product {
 	data, err := os.ReadFile(filepath.Join("products", "products.json"))
 	if err != nil {
@@ -90,7 +82,6 @@ func loadProducts() map[string]Product {
 	return products
 }
 
-// saveProducts saves products to file
 func saveProducts(products map[string]Product) error {
 	data, err := json.MarshalIndent(products, "", "  ")
 	if err != nil {
@@ -99,7 +90,6 @@ func saveProducts(products map[string]Product) error {
 	return os.WriteFile(filepath.Join("products", "products.json"), data, 0644)
 }
 
-// loadLibrary loads library repositories from file
 func loadLibrary() []LibraryRepo {
 	data, err := os.ReadFile(filepath.Join("products", "library.json"))
 	if err != nil {
@@ -114,7 +104,6 @@ func loadLibrary() []LibraryRepo {
 	return library
 }
 
-// saveLibrary saves library repositories to file
 func saveLibrary(library []LibraryRepo) error {
 	data, err := json.MarshalIndent(library, "", "  ")
 	if err != nil {
@@ -123,11 +112,9 @@ func saveLibrary(library []LibraryRepo) error {
 	return os.WriteFile(filepath.Join("products", "library.json"), data, 0644)
 }
 
-// addLibraryRepo adds a repository to the library
 func addLibraryRepo(name, repoURL, aiService, cpe string) error {
 	library := loadLibrary()
 
-	// Check if already exists
 	for _, repo := range library {
 		if repo.Name == name {
 			return fmt.Errorf("repository already exists")
@@ -148,7 +135,6 @@ func addLibraryRepo(name, repoURL, aiService, cpe string) error {
 	return saveLibrary(library)
 }
 
-// removeLibraryRepo removes a repository from the library
 func removeLibraryRepo(repoID string) error {
 	library := loadLibrary()
 	
@@ -162,7 +148,6 @@ func removeLibraryRepo(repoID string) error {
 	return saveLibrary(newLibrary)
 }
 
-// toggleLibraryAutoScan toggles auto-scan for a library repository
 func toggleLibraryAutoScan(repoID string) error {
 	library := loadLibrary()
 	
@@ -176,13 +161,11 @@ func toggleLibraryAutoScan(repoID string) error {
 	return fmt.Errorf("repository not found")
 }
 
-// getGitHubVersions fetches versions/tags from a GitHub repository using web interface
 func getGitHubVersions(repoURL string) []string {
 	if !validateURL(repoURL) {
 		return []string{}
 	}
 
-	// Use GitHub web interface instead of API to avoid rate limits
 	url := fmt.Sprintf("%s/refs?tag_name=&experimental=1", repoURL)
 	
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -216,14 +199,12 @@ func getGitHubVersions(repoURL string) []string {
 		return []string{}
 	}
 
-	// Parse JSON response
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
 		log.Printf("Error parsing JSON response: %v", err)
 		return []string{}
 	}
 
-	// Extract versions from refs array
 	versions := []string{}
 	if refs, exists := data["refs"]; exists {
 		if refsList, ok := refs.([]interface{}); ok {
@@ -238,7 +219,6 @@ func getGitHubVersions(repoURL string) []string {
 		}
 	}
 
-	// Remove duplicates while preserving order
 	uniqueVersions := []string{}
 	seen := make(map[string]bool)
 	for _, version := range versions {
@@ -248,7 +228,6 @@ func getGitHubVersions(repoURL string) []string {
 		}
 	}
 
-	// Sort versions using semantic versioning
 	sort.Slice(uniqueVersions, func(i, j int) bool {
 		return compareVersions(uniqueVersions[i], uniqueVersions[j]) > 0
 	})
@@ -257,7 +236,6 @@ func getGitHubVersions(repoURL string) []string {
 	return uniqueVersions
 }
 
-// loadAllAnalyses loads all saved analyses
 func loadAllAnalyses() []Analysis {
 	analyses := []Analysis{}
 
@@ -267,7 +245,7 @@ func loadAllAnalyses() []Analysis {
 	}
 
 	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".json") && !strings.HasPrefix(file.Name(), "benchmark_") {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".json") {
 			analysisID := strings.TrimSuffix(file.Name(), ".json")
 			if !isValidUUID(analysisID) {
 				continue
@@ -288,7 +266,6 @@ func loadAllAnalyses() []Analysis {
 		}
 	}
 
-	// Sort by creation date (newest first)
 	sort.Slice(analyses, func(i, j int) bool {
 		return analyses[i].Meta.CreatedAt.After(analyses[j].Meta.CreatedAt)
 	})
@@ -296,51 +273,11 @@ func loadAllAnalyses() []Analysis {
 	return analyses
 }
 
-// loadBenchmarkResults loads all benchmark results
-func loadBenchmarkResults() []BenchmarkResult {
-	results := []BenchmarkResult{}
 
-	files, err := os.ReadDir("saved_analyses")
-	if err != nil {
-		return results
-	}
-
-	for _, file := range files {
-		if !file.IsDir() && strings.HasPrefix(file.Name(), "benchmark_") && strings.HasSuffix(file.Name(), ".json") {
-			benchmarkID := strings.TrimSuffix(strings.TrimPrefix(file.Name(), "benchmark_"), ".json")
-			if !isValidUUID(benchmarkID) {
-				continue
-			}
-
-			data, err := os.ReadFile(filepath.Join("saved_analyses", file.Name()))
-			if err != nil {
-				continue
-			}
-
-			var result BenchmarkResult
-			if err := json.Unmarshal(data, &result); err != nil {
-				continue
-			}
-
-			result.BenchmarkID = benchmarkID
-			results = append(results, result)
-		}
-	}
-
-	// Sort by creation date (newest first)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].CreatedAt.After(results[j].CreatedAt)
-	})
-
-	return results
-}
-
-// filterAnalysisResults filters analysis results based on criteria
 func filterAnalysisResults(results map[string]AnalysisResult, filterType, searchTerm string) map[string]AnalysisResult {
 	filtered := make(map[string]AnalysisResult)
 
 	for filename, result := range results {
-		// Apply filter
 		include := true
 		switch filterType {
 		case "cve":
@@ -362,7 +299,6 @@ func filterAnalysisResults(results map[string]AnalysisResult, filterType, search
 			continue
 		}
 
-		// Apply search
 		if searchTerm != "" {
 			aiResponse := strings.ToLower(result.AIResponse)
 			filenameLower := strings.ToLower(filename)
@@ -394,7 +330,6 @@ func filterAnalysisResults(results map[string]AnalysisResult, filterType, search
 	return filtered
 }
 
-// createNewAnalysisRecord creates a new analysis record
 func createNewAnalysisRecord(params map[string]interface{}, source string, aiEnabled bool) string {
 	analysisID := uuid.New().String()
 
@@ -428,14 +363,12 @@ func createNewAnalysisRecord(params map[string]interface{}, source string, aiEna
 	return analysisID
 }
 
-// countVulnerabilities counts vulnerabilities in analysis results
 func countVulnerabilities(results map[string]AnalysisResult) int {
 	count := 0
 	for _, result := range results {
 		if strings.HasPrefix(result.VulnerabilityStatus, "AI: ") {
 			vulnText := strings.TrimPrefix(result.VulnerabilityStatus, "AI: ")
 			if !strings.HasPrefix(vulnText, "Not sure") && !strings.HasPrefix(vulnText, "No vulnerabilities") {
-				// Try to extract number
 				parts := strings.Split(vulnText, " ")
 				if len(parts) > 0 {
 					var num int
@@ -448,24 +381,18 @@ func countVulnerabilities(results map[string]AnalysisResult) int {
 	return count
 }
 
-// compareVersions compares two version strings using semantic versioning
-// Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if v1 == v2
 func compareVersions(v1, v2 string) int {
-	// Remove 'v' prefix if present
 	v1 = strings.TrimPrefix(v1, "v")
 	v2 = strings.TrimPrefix(v2, "v")
 	
-	// Split versions into parts
 	parts1 := strings.Split(v1, ".")
 	parts2 := strings.Split(v2, ".")
 	
-	// Pad shorter version with zeros
 	maxLen := len(parts1)
 	if len(parts2) > maxLen {
 		maxLen = len(parts2)
 	}
 	
-	// Pad both arrays to same length
 	for len(parts1) < maxLen {
 		parts1 = append(parts1, "0")
 	}
@@ -473,12 +400,10 @@ func compareVersions(v1, v2 string) int {
 		parts2 = append(parts2, "0")
 	}
 	
-	// Compare each part
 	for i := 0; i < maxLen; i++ {
 		num1, err1 := parseVersionPart(parts1[i])
 		num2, err2 := parseVersionPart(parts2[i])
 		
-		// If both are numbers, compare numerically
 		if err1 == nil && err2 == nil {
 			if num1 > num2 {
 				return 1
@@ -486,7 +411,6 @@ func compareVersions(v1, v2 string) int {
 				return -1
 			}
 		} else {
-			// If one or both are not numbers, compare as strings
 			if parts1[i] > parts2[i] {
 				return 1
 			} else if parts1[i] < parts2[i] {
@@ -498,10 +422,7 @@ func compareVersions(v1, v2 string) int {
 	return 0
 }
 
-// parseVersionPart parses a version part (e.g., "11", "1", "beta") 
-// Returns the numeric value if it's a number, or an error if it's not
 func parseVersionPart(part string) (int, error) {
-	// Remove any non-numeric suffix (e.g., "11-beta" -> "11")
 	cleanPart := part
 	for i, char := range part {
 		if char < '0' || char > '9' {
@@ -517,7 +438,6 @@ func parseVersionPart(part string) (int, error) {
 	return strconv.Atoi(cleanPart)
 }
 
-// fetchCVEsFromNVD fetches CVEs for a specific CPE and version from NVD API
 func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=%s", cpeName)
 	log.Printf("🔗 NVD API request: %s", url)
@@ -568,33 +488,22 @@ func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 	return cves, nil
 }
 
-// getCVEsForVersion gets CVEs for a specific version using CPE
 func getCVEsForVersion(cpe, version string) ([]CVE, error) {
-	// NVD CPE format uses colons, not hyphens for version parts
-	// Example: "2.4.9-alpha2" becomes "2.4.9:alpha2" in CPE
 	cpeVersion := strings.Replace(version, "-", ":", -1)
 	
-	// Construct CPE name with version
 	cpeName := fmt.Sprintf("%s:%s", cpe, cpeVersion)
 	log.Printf("🔍 CPE query: %s (original version: %s)", cpeName, version)
 	return fetchCVEsFromNVD(cpeName)
 }
 
-// getNextIncrementalVersion finds the next incremental version (e.g., p1→p2, alpha2→alpha3)
-// If no incremental version exists, returns the next available version
 func getNextIncrementalVersion(currentVersion string, allVersions []string) string {
-	// Extract base version and suffix
-	// Examples: "2.4.8-p1" → base="2.4.8", suffix="p1"
-	//           "2.4.9-alpha2" → base="2.4.9", suffix="alpha2"
 	parts := strings.SplitN(currentVersion, "-", 2)
 	if len(parts) != 2 {
-		// No suffix, just return next available version
 		return findNextVersion(currentVersion, allVersions)
 	}
 	
 	baseVersion := parts[0]
 	
-	// Find current version's position in the list
 	currentIdx := -1
 	for i, v := range allVersions {
 		if v == currentVersion {
@@ -604,30 +513,23 @@ func getNextIncrementalVersion(currentVersion string, allVersions []string) stri
 	}
 	
 	if currentIdx == -1 {
-		// Current version not in list, just return next available
 		return findNextVersion(currentVersion, allVersions)
 	}
 	
-	// Look for incremental versions with same base that come BEFORE current (i.e., newer)
-	// allVersions is sorted newest first, so we only check indices 0 to currentIdx-1
 	for i := 0; i < currentIdx; i++ {
 		v := allVersions[i]
 		if strings.HasPrefix(v, baseVersion+"-") {
-			// Found a newer incremental version with same base
 			log.Printf("🔄 Found incremental version: %s → %s", currentVersion, v)
 			return v
 		}
 	}
 	
-	// No newer incremental version found, return next major/minor version
 	nextVer := findNextVersion(currentVersion, allVersions)
 	log.Printf("📈 No incremental version found, jumping to: %s → %s", currentVersion, nextVer)
 	return nextVer
 }
 
-// findNextVersion finds the next version in the list after currentVersion
 func findNextVersion(currentVersion string, allVersions []string) string {
-	// Find current version index
 	currentIdx := -1
 	for i, v := range allVersions {
 		if v == currentVersion {
@@ -636,12 +538,10 @@ func findNextVersion(currentVersion string, allVersions []string) string {
 		}
 	}
 	
-	// Return next version if available
 	if currentIdx >= 0 && currentIdx > 0 {
-		return allVersions[currentIdx-1] // versions are sorted newest first
+		return allVersions[currentIdx-1]
 	}
 	
-	// If current version not found or is latest, return first version
 	if len(allVersions) > 0 {
 		return allVersions[0]
 	}
@@ -649,11 +549,9 @@ func findNextVersion(currentVersion string, allVersions []string) string {
 	return currentVersion
 }
 
-// updateAnalysisParams updates the params in an existing analysis file
 func updateAnalysisParams(analysisID string, params map[string]interface{}) error {
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	
-	// Read existing analysis
 	data, err := os.ReadFile(analysisPath)
 	if err != nil {
 		return fmt.Errorf("failed to read analysis file: %w", err)
@@ -664,10 +562,8 @@ func updateAnalysisParams(analysisID string, params map[string]interface{}) erro
 		return fmt.Errorf("failed to unmarshal analysis: %w", err)
 	}
 	
-	// Update params
 	analysis.Meta.Params = params
 	
-	// Save updated analysis
 	updatedData, err := json.MarshalIndent(analysis, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal analysis: %w", err)
@@ -680,7 +576,6 @@ func updateAnalysisParams(analysisID string, params map[string]interface{}) erro
 	return nil
 }
 
-// runCVEBasedAnalysis runs analysis using CVE data from NVD
 func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[string]AnalysisResult {
 	log.Printf("🔍 Running CVE-based analysis with params: %v", params)
 	
@@ -694,7 +589,6 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 	extension, _ := params["extension"].(string)
 	specialKeywords, _ := params["special_keywords"].(string)
 	
-	// Validate inputs
 	if repoURL == "" || oldVersion == "" || newVersion == "" || cpe == "" {
 		log.Printf("Missing required parameters for CVE-based analysis")
 		return make(map[string]AnalysisResult)
@@ -702,7 +596,6 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 	
 	log.Printf("🔍 Analyzing %s: %s → %s using CVE data (CPE: %s)", repoName, oldVersion, newVersion, cpe)
 	
-	// 1. Get CVEs for the old version
 	log.Printf("📡 Fetching CVEs for version %s using CPE: %s", oldVersion, cpe)
 	oldCVEs, err := getCVEsForVersion(cpe, oldVersion)
 	if err != nil {
@@ -719,7 +612,6 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 	if len(oldCVEs) == 0 {
 		log.Printf("⚠️  No CVEs found for version %s - analysis will proceed without CVE matching", oldVersion)
 	} else {
-		// Store CVE IDs in params for UI display
 		cveIDs := make([]string, 0, len(oldCVEs))
 		for _, cve := range oldCVEs {
 			cveIDs = append(cveIDs, cve.ID)
@@ -727,7 +619,6 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		params["cve_ids"] = strings.Join(cveIDs, ", ")
 		log.Printf("📋 CVE IDs stored in params: %s", params["cve_ids"])
 		
-		// Immediately update the analysis file so CVE IDs show in UI while analysis is running
 		if err := updateAnalysisParams(analysisID, params); err != nil {
 			log.Printf("⚠️  Failed to update analysis params with CVE IDs: %v", err)
 		} else {
@@ -735,7 +626,6 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		}
 	}
 	
-	// 2. Download and extract both versions (cached)
 	oldPath, err := downloadAndExtractVersion(repoURL, oldVersion)
 	if err != nil {
 		log.Printf("Failed to download old version %s: %v", oldVersion, err)
@@ -748,14 +638,11 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		return make(map[string]AnalysisResult)
 	}
 	
-	// 3. Compare directories and generate diffs
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
-	// 4. Analyze diffs for vulnerabilities using CVE data
 	results := analyzeDiffsWithCVEs(diffs, specialKeywords, oldCVEs)
 	
-	// 5. Run AI analysis if enabled
 	if enableAI && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, "", *aiThreads)
 	}
@@ -764,7 +651,6 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 	return results
 }
 
-// analyzeDiffsWithCVEs prepares diffs with CVE data for AI analysis
 func analyzeDiffsWithCVEs(diffs []DiffFile, keywords string, cves []CVE) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	
@@ -773,10 +659,8 @@ func analyzeDiffsWithCVEs(diffs []DiffFile, keywords string, cves []CVE) map[str
 			continue
 		}
 		
-		// Send ALL diffs to AI - no keyword filtering
 		contextLines := diff.Diff
 		
-		// Limit context lines to prevent oversized requests
 		if len(contextLines) > 1000 {
 			contextLines = contextLines[:1000]
 		}
@@ -785,11 +669,9 @@ func analyzeDiffsWithCVEs(diffs []DiffFile, keywords string, cves []CVE) map[str
 			Context: contextLines,
 		}
 		
-		// Set initial vulnerability status (will be updated by AI analysis)
 		result.VulnerabilityStatus = "AI: Analyzing..."
 		result.VulnSeverity = "unknown"
 		
-		// Store CVE info for AI to match against
 		if len(cves) > 0 {
 			result.CVEMatches = make(map[string]CVEMatch)
 			for _, cve := range cves {
