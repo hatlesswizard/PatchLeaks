@@ -236,6 +236,168 @@ func getGitHubVersions(repoURL string) []string {
 	return uniqueVersions
 }
 
+func getGitHubVersionsByDate(repoURL string) []string {
+	if !validateURL(repoURL) {
+		return []string{}
+	}
+
+	url := fmt.Sprintf("%s/refs?tag_name=&experimental=1", repoURL)
+	
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Printf("Error creating request: %v", err)
+		return []string{}
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	
+	log.Printf("DEBUG: Fetching tags from: %s", url)
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error fetching tags from GitHub: %v", err)
+		return []string{}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("DEBUG: GitHub returned status: %d", resp.StatusCode)
+		return []string{}
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %v", err)
+		return []string{}
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		log.Printf("Error parsing JSON response: %v", err)
+		return []string{}
+	}
+
+	
+	tags := []string{}
+	if refs, exists := data["refs"]; exists {
+		if refsList, ok := refs.([]interface{}); ok {
+			for i, ref := range refsList {
+				if i >= 20 { 
+					break
+				}
+				if version, ok := ref.(string); ok {
+					version = strings.TrimSpace(version)
+					if validateVersion(version) {
+						tags = append(tags, version)
+					}
+				}
+			}
+		}
+	}
+
+	if len(tags) == 0 {
+		log.Printf("DEBUG: No tags found for repository")
+		return []string{}
+	}
+
+	log.Printf("DEBUG: Found %d tags, checking release dates", len(tags))
+
+	
+	type TagWithDate struct {
+		Tag  string
+		Date time.Time
+	}
+
+	var tagsWithDates []TagWithDate
+	for _, tag := range tags {
+		releaseURL := fmt.Sprintf("%s/releases/tag/%s", repoURL, tag)
+		
+		req, err := http.NewRequest("GET", releaseURL, nil)
+		if err != nil {
+			log.Printf("Error creating request for tag %s: %v", tag, err)
+			continue
+		}
+
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+		
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Error fetching release page for tag %s: %v", tag, err)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			
+			if err != nil {
+				log.Printf("Error reading release page for tag %s: %v", tag, err)
+				continue
+			}
+
+			
+			datetime := extractDatetimeFromHTML(string(body))
+			if !datetime.IsZero() {
+				tagsWithDates = append(tagsWithDates, TagWithDate{Tag: tag, Date: datetime})
+				log.Printf("DEBUG: Tag %s has release date %s", tag, datetime.Format(time.RFC3339))
+			} else {
+				log.Printf("DEBUG: Could not extract datetime for tag %s", tag)
+			}
+		} else {
+			log.Printf("DEBUG: Release page for tag %s returned status %d", tag, resp.StatusCode)
+			resp.Body.Close()
+		}
+	}
+
+	
+	sort.Slice(tagsWithDates, func(i, j int) bool {
+		return tagsWithDates[i].Date.After(tagsWithDates[j].Date)
+	})
+
+	
+	result := make([]string, len(tagsWithDates))
+	for i, tagWithDate := range tagsWithDates {
+		result[i] = tagWithDate.Tag
+	}
+
+	log.Printf("DEBUG: Sorted %d tags by release date", len(result))
+	return result
+}
+
+
+func extractDatetimeFromHTML(html string) time.Time {
+	
+	re := regexp.MustCompile(`<relative-time[^>]*datetime="([^"]+)"`)
+	matches := re.FindStringSubmatch(html)
+	
+	if len(matches) < 2 {
+		return time.Time{}
+	}
+
+	datetimeStr := matches[1]
+	
+	
+	formats := []string{
+		"2006-01-02T15:04:05Z07:00",     
+		"2006-01-02 15:04:05 UTC",       
+		"2006-01-02T15:04:05Z",          
+		"2006-01-02 15:04:05",           
+	}
+	
+	for _, format := range formats {
+		datetime, err := time.Parse(format, datetimeStr)
+		if err == nil {
+			return datetime
+		}
+	}
+	
+	log.Printf("Error parsing datetime %s: tried all supported formats", datetimeStr)
+	return time.Time{}
+}
+
 func loadAllAnalyses() []Analysis {
 	analyses := []Analysis{}
 
@@ -381,12 +543,20 @@ func countVulnerabilities(results map[string]AnalysisResult) int {
 	return count
 }
 
+
+func splitVersionString(version string) []string {
+	
+	normalized := strings.ReplaceAll(version, "_", ".")
+	return strings.Split(normalized, ".")
+}
+
 func compareVersions(v1, v2 string) int {
 	v1 = strings.TrimPrefix(v1, "v")
 	v2 = strings.TrimPrefix(v2, "v")
 	
-	parts1 := strings.Split(v1, ".")
-	parts2 := strings.Split(v2, ".")
+	
+	parts1 := splitVersionString(v1)
+	parts2 := splitVersionString(v2)
 	
 	maxLen := len(parts1)
 	if len(parts2) > maxLen {
