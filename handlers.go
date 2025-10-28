@@ -619,6 +619,14 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := config.Save(); err != nil {
 			log.Printf("Error saving config: %v", err)
+		} else {
+			reloadedConfig, err := LoadConfig()
+			if err != nil {
+				log.Printf("Error reloading config: %v", err)
+			} else {
+				config = reloadedConfig
+				log.Printf("AI config reloaded successfully")
+			}
 		}
 
 		http.Redirect(w, r, "/ai-settings", http.StatusSeeOther)
