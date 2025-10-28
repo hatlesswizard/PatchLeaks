@@ -1462,7 +1462,7 @@ func processAIAnalysis(results map[string]AnalysisResult, diffs []DiffFile, cveI
 
 		result := results[diff.Filename]
 		
-		diffContent := strings.Join(diff.Diff, "\n")
+		diffContent := strings.Join(result.Context, "\n")
 		aiResponse := GetAIAnalysis(diff.Filename, diffContent)
 		result.AIResponse = aiResponse
 
