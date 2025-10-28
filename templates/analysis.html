@@ -714,7 +714,21 @@
                         {{- $cveIDs = (index .Analysis.Meta.Params "cve_ids") -}}
                     {{- end -}}
                 {{- end -}}
-                {{- if $cveIDs -}}
+                {{- $productName := "" -}}
+                {{- $oldVersion := "" -}}
+                {{- $newVersion := "" -}}
+                {{- if (index .Analysis.Meta.Params "product") -}}
+                    {{- $productName = (index .Analysis.Meta.Params "product") -}}
+                    {{- $oldVersion = (index .Analysis.Meta.Params "old_version") -}}
+                    {{- $newVersion = (index .Analysis.Meta.Params "new_version") -}}
+                {{- else if (index .Analysis.Meta.Params "old_folder") -}}
+                    {{- $productName = "Folder Analysis" -}}
+                    {{- $oldVersion = (index .Analysis.Meta.Params "old_folder") -}}
+                    {{- $newVersion = (index .Analysis.Meta.Params "new_folder") -}}
+                {{- end -}}
+                {{- if $productName -}}
+                <h2 class="display-5 fw-bold mb-3">Analysis Report {{$productName}} {{$oldVersion}} → {{$newVersion}}</h2>
+                {{- else if $cveIDs -}}
                 <h2 class="display-5 fw-bold mb-3">Analysis Report for {{$cveIDs}}</h2>
                 {{- else -}}
                 <h2 class="display-5 fw-bold mb-3">Analysis Report</h2>
