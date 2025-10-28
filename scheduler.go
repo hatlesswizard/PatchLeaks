@@ -34,7 +34,7 @@ func checkForNewVersions() {
 			continue
 		}
 
-		versions := getGitHubVersions(repo.RepoURL)
+		versions := getGitHubVersionsByDate(repo.RepoURL)
 		if len(versions) == 0 {
 			continue
 		}
