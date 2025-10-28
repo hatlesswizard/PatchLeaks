@@ -161,8 +161,6 @@ func printBanner(username, password, host string, port, aiThreads int) {
 	serverURL := fmt.Sprintf("http://%s:%d", host, port)
 	aiThreadsStr := fmt.Sprintf("%d", aiThreads)
 	maxWidth := 67
-	
-	// Create properly aligned lines
 	urlLine := fmt.Sprintf("║  Server URL:  %s", serverURL)
 	threadsLine := fmt.Sprintf("║  AI Threads:  %s", aiThreadsStr)
 
