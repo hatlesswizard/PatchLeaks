@@ -114,13 +114,32 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 		return make(map[string]AnalysisResult)
 	}
 	
+	
+	var oldIndex, newIndex *FunctionIndex
+	if enableAI {
+		log.Printf("Indexing PHP files for function definitions...")
+		oldIndex, _ = ensureIndexed(oldPath)
+		newIndex, _ = ensureIndexed(newPath)
+		if oldIndex != nil || newIndex != nil {
+			oldCount := 0
+			newCount := 0
+			if oldIndex != nil {
+				oldCount = len(oldIndex.Classes)
+			}
+			if newIndex != nil {
+				newCount = len(newIndex.Classes)
+			}
+			log.Printf("✅ PHP indexing complete (old: %d classes, new: %d classes)", oldCount, newCount)
+		}
+	}
+	
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	
 	if enableAI && len(results) > 0 {
-		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads)
+		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, oldPath, newPath, oldIndex, newIndex)
 	}
 	
 	log.Printf("Analysis complete: %d files with potential issues", len(results))
@@ -166,13 +185,32 @@ func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult
 		return make(map[string]AnalysisResult)
 	}
 	
+	
+	var oldIndex, newIndex *FunctionIndex
+	if enableAI {
+		log.Printf("Indexing PHP files for function definitions...")
+		oldIndex, _ = ensureIndexed(oldPath)
+		newIndex, _ = ensureIndexed(newPath)
+		if oldIndex != nil || newIndex != nil {
+			oldCount := 0
+			newCount := 0
+			if oldIndex != nil {
+				oldCount = len(oldIndex.Classes)
+			}
+			if newIndex != nil {
+				newCount = len(newIndex.Classes)
+			}
+			log.Printf("✅ PHP indexing complete (old: %d classes, new: %d classes)", oldCount, newCount)
+		}
+	}
+	
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	
 	if enableAI && len(results) > 0 {
-		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads)
+		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, oldPath, newPath, oldIndex, newIndex)
 	}
 	
 	log.Printf("Library analysis complete: %d files with potential issues", len(results))
@@ -1053,7 +1091,7 @@ func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) m
 	return results
 }
 
-func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, threadCount int) map[string]AnalysisResult {
+func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, threadCount int, oldPath, newPath string, oldIndex, newIndex *FunctionIndex) map[string]AnalysisResult {
 	log.Printf("Running REAL AI analysis on %d results with %d threads...", len(results), threadCount)
 	
 	if config == nil {
@@ -1110,8 +1148,21 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 			for item := range workChan {
 				diffContent := strings.Join(item.result.Context, "\n")
 				
+				
+				enhancedDiff := diffContent
+				if oldIndex != nil || newIndex != nil {
+					if strings.HasSuffix(strings.ToLower(item.filename), ".php") {
+						calls := extractFunctionCallsFromDiff(diffContent, item.filename)
+						definitions := lookupFunctionDefinitions(calls, oldIndex, newIndex, item.filename)
+						if len(definitions) > 0 {
+							enhancedDiff = enhanceAIPromptWithFunctions(diffContent, definitions)
+							log.Printf("Worker %d: Enhanced diff with %d function definitions for %s", workerID+1, len(definitions), item.filename)
+						}
+					}
+				}
+				
 				log.Printf("Worker %d: Calling AI analysis for %s...", workerID+1, item.filename)
-				aiResponse := GetAIAnalysis(item.filename, diffContent)
+				aiResponse := GetAIAnalysis(item.filename, enhancedDiff)
 				log.Printf("Worker %d: AI response for %s: %s", workerID+1, item.filename, aiResponse[:min(100, len(aiResponse))])
 				item.result.AIResponse = aiResponse
 				
@@ -1129,7 +1180,7 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 							log.Printf("Worker %d: CVE description: %s", workerID+1, description[:min(100, len(description))])
 							
 							if item.result.AIResponse == "" {
-								item.result.AIResponse = GetAIAnalysis(item.filename, diffContent)
+								item.result.AIResponse = GetAIAnalysis(item.filename, enhancedDiff)
 								log.Printf("Worker %d: AI analysis: %s", workerID+1, item.result.AIResponse[:min(100, len(item.result.AIResponse))])
 							}
 							
