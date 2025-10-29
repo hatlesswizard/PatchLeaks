@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,9 @@ import (
 const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0"
 )
+
+
+const recentTagLimit = 15
 
 func validateInput(input interface{}, maxLength int) string {
 	str, ok := input.(string)
@@ -282,10 +286,10 @@ func getGitHubVersionsByDate(repoURL string) []string {
 
 	
 	tags := []string{}
-	if refs, exists := data["refs"]; exists {
+    if refs, exists := data["refs"]; exists {
 		if refsList, ok := refs.([]interface{}); ok {
 			for i, ref := range refsList {
-				if i >= 20 { 
+                if i >= recentTagLimit { 
 					break
 				}
 				if version, ok := ref.(string); ok {
@@ -311,46 +315,78 @@ func getGitHubVersionsByDate(repoURL string) []string {
 		Date time.Time
 	}
 
-	var tagsWithDates []TagWithDate
-	for _, tag := range tags {
-		releaseURL := fmt.Sprintf("%s/releases/tag/%s", repoURL, tag)
-		
-		req, err := http.NewRequest("GET", releaseURL, nil)
-		if err != nil {
-			log.Printf("Error creating request for tag %s: %v", tag, err)
-			continue
-		}
+    var tagsWithDates []TagWithDate
 
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-		
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("Error fetching release page for tag %s: %v", tag, err)
-			continue
-		}
+    type job struct{ tag string }
+    type tagDateResult struct{
+        tag  string
+        date time.Time
+    }
 
-		if resp.StatusCode == http.StatusOK {
-			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			
-			if err != nil {
-				log.Printf("Error reading release page for tag %s: %v", tag, err)
-				continue
-			}
+    jobs := make(chan job, len(tags))
+    results := make(chan tagDateResult, len(tags))
 
-			
-			datetime := extractDatetimeFromHTML(string(body))
-			if !datetime.IsZero() {
-				tagsWithDates = append(tagsWithDates, TagWithDate{Tag: tag, Date: datetime})
-				log.Printf("DEBUG: Tag %s has release date %s", tag, datetime.Format(time.RFC3339))
-			} else {
-				log.Printf("DEBUG: Could not extract datetime for tag %s", tag)
-			}
-		} else {
-			log.Printf("DEBUG: Release page for tag %s returned status %d", tag, resp.StatusCode)
-			resp.Body.Close()
-		}
-	}
+    
+    workerCount := 6
+    if workerCount > len(tags) {
+        workerCount = len(tags)
+    }
+
+    var wg sync.WaitGroup
+    for w := 0; w < workerCount; w++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            for j := range jobs {
+                releaseURL := fmt.Sprintf("%s/releases/tag/%s", repoURL, j.tag)
+                req, err := http.NewRequest("GET", releaseURL, nil)
+                if err != nil {
+                    log.Printf("Error creating request for tag %s: %v", j.tag, err)
+                    continue
+                }
+                req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+
+                resp, err := client.Do(req)
+                if err != nil {
+                    log.Printf("Error fetching release page for tag %s: %v", j.tag, err)
+                    continue
+                }
+
+                if resp.StatusCode == http.StatusOK {
+                    body, err := io.ReadAll(resp.Body)
+                    resp.Body.Close()
+                    if err != nil {
+                        log.Printf("Error reading release page for tag %s: %v", j.tag, err)
+                        continue
+                    }
+                    datetime := extractDatetimeFromHTML(string(body))
+                    if !datetime.IsZero() {
+                        results <- tagDateResult{tag: j.tag, date: datetime}
+                        log.Printf("DEBUG: Tag %s has release date %s", j.tag, datetime.Format(time.RFC3339))
+                    } else {
+                        log.Printf("DEBUG: Could not extract datetime for tag %s", j.tag)
+                    }
+                } else {
+                    log.Printf("DEBUG: Release page for tag %s returned status %d", j.tag, resp.StatusCode)
+                    resp.Body.Close()
+                }
+            }
+        }()
+    }
+
+    for _, t := range tags {
+        jobs <- job{tag: t}
+    }
+    close(jobs)
+
+    go func() {
+        wg.Wait()
+        close(results)
+    }()
+
+    for r := range results {
+        tagsWithDates = append(tagsWithDates, TagWithDate{Tag: r.tag, Date: r.date})
+    }
 
 	
 	sort.Slice(tagsWithDates, func(i, j int) bool {
@@ -369,33 +405,47 @@ func getGitHubVersionsByDate(repoURL string) []string {
 
 
 func extractDatetimeFromHTML(html string) time.Time {
+
 	
-	re := regexp.MustCompile(`<relative-time[^>]*datetime="([^"]+)"`)
-	matches := re.FindStringSubmatch(html)
-	
-	if len(matches) < 2 {
-		return time.Time{}
+	tagRe := regexp.MustCompile(`<relative-time[^>]*>`)
+	classRe := regexp.MustCompile(`\bclass="([^"]+)"`)
+ 	thresholdRe := regexp.MustCompile(`\bthreshold\s*=`)
+	datetimeRe := regexp.MustCompile(`\bdatetime="([^"]+)"`)
+
+	tags := tagRe.FindAllString(html, -1)
+	for _, tag := range tags {
+		
+		if thresholdRe.MatchString(tag) {
+			continue
+		}
+		classMatch := classRe.FindStringSubmatch(tag)
+		if len(classMatch) < 2 || classMatch[1] != "no-wrap" {
+			continue
+		}
+		dtMatch := datetimeRe.FindStringSubmatch(tag)
+		if len(dtMatch) < 2 {
+			continue
+		}
+		datetimeStr := dtMatch[1]
+
+		formats := []string{
+			"2006-01-02T15:04:05Z07:00",		 
+			"2006-01-02 15:04:05 UTC",	   
+			"2006-01-02T15:04:05Z",	      
+			"2006-01-02 15:04:05",	       
+		}
+		for _, format := range formats {
+			datetime, err := time.Parse(format, datetimeStr)
+			if err == nil {
+				return datetime
+			}
+		}
+		log.Printf("Error parsing datetime %s: tried all supported formats", datetimeStr)
 	}
 
-	datetimeStr := matches[1]
-	
-	
-	formats := []string{
-		"2006-01-02T15:04:05Z07:00",     
-		"2006-01-02 15:04:05 UTC",       
-		"2006-01-02T15:04:05Z",          
-		"2006-01-02 15:04:05",           
-	}
-	
-	for _, format := range formats {
-		datetime, err := time.Parse(format, datetimeStr)
-		if err == nil {
-			return datetime
-		}
-	}
-	
-	log.Printf("Error parsing datetime %s: tried all supported formats", datetimeStr)
+	log.Printf("DEBUG: No matching <relative-time class=\"no-wrap\"> without threshold found")
 	return time.Time{}
+	
 }
 
 func loadAllAnalyses() []Analysis {
@@ -808,13 +858,33 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		return make(map[string]AnalysisResult)
 	}
 	
+	
+	var oldIndex, newIndex *FunctionIndex
+	if enableAI {
+		log.Printf("Indexing PHP files for function definitions...")
+		oldIndex, _ = ensureIndexed(oldPath)
+		newIndex, _ = ensureIndexed(newPath)
+		if oldIndex != nil || newIndex != nil {
+			oldCount := 0
+			newCount := 0
+			if oldIndex != nil {
+				oldCount = len(oldIndex.Classes)
+			}
+			if newIndex != nil {
+				newCount = len(newIndex.Classes)
+			}
+			log.Printf("✅ PHP indexing complete (old: %d classes, new: %d classes)", oldCount, newCount)
+		}
+	}
+	
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
 	results := analyzeDiffsWithCVEs(diffs, specialKeywords, oldCVEs)
 	
 	if enableAI && len(results) > 0 {
-		results = runAIAnalysisOnResults(results, "", *aiThreads)
+		cveIDsStr, _ := params["cve_ids"].(string)
+		results = runAIAnalysisOnResults(results, cveIDsStr, *aiThreads, oldPath, newPath, oldIndex, newIndex)
 	}
 	
 	log.Printf("🎯 CVE-based analysis complete: %d files with potential issues", len(results))
