@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -24,43 +26,73 @@ func checkForNewVersions() {
 	log.Println("Checking for new versions in library")
 	
 	library := loadLibrary()
-	
-	for i, repo := range library {
-		if !repo.AutoScan {
-			continue
-		}
+    
+    type job struct{
+        idx  int
+        repo LibraryRepo
+    }
+    type outcome struct{
+        idx         int
+        lastChecked time.Time
+        lastVersion string
+        changed     bool
+    }
 
-		if !validateURL(repo.RepoURL) {
-			continue
-		}
+    jobs := make(chan job, len(library))
+    results := make(chan outcome, len(library))
 
-		versions := getGitHubVersionsByDate(repo.RepoURL)
-		if len(versions) == 0 {
-			continue
-		}
+    
+    for i, repo := range library {
+        if !repo.AutoScan { continue }
+        if !validateURL(repo.RepoURL) { continue }
+        jobs <- job{idx: i, repo: repo}
+    }
+    close(jobs)
 
-		var nextVersion string
-		if repo.LastVersion == "" {
-			nextVersion = versions[0]
-		} else {
-			nextVersion = getNextIncrementalVersion(repo.LastVersion, versions)
-		}
-		
-		if repo.LastVersion != nextVersion {
-			log.Printf("New version detected for %s: %s → %s", repo.Name, repo.LastVersion, nextVersion)
-			
-			if repo.LastVersion != "" {
-				triggerAutoAnalysis(repo, repo.LastVersion, nextVersion)
-			}
-			
-			now := time.Now()
-			library[i].LastChecked = &now
-			library[i].LastVersion = nextVersion
-		} else {
-			now := time.Now()
-			library[i].LastChecked = &now
-		}
-	}
+    
+    workerCount := runtime.NumCPU()
+    if workerCount > 8 { workerCount = 8 }
+
+    var wg sync.WaitGroup
+    for w := 0; w < workerCount; w++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            for j := range jobs {
+                versions := getGitHubVersionsByDate(j.repo.RepoURL)
+                if len(versions) == 0 {
+                    continue
+                }
+
+                var nextVersion string
+                if j.repo.LastVersion == "" {
+                    nextVersion = versions[0]
+                } else {
+                    nextVersion = getNextIncrementalVersion(j.repo.LastVersion, versions)
+                }
+
+                now := time.Now()
+                if j.repo.LastVersion != nextVersion {
+                    log.Printf("New version detected for %s: %s → %s", j.repo.Name, j.repo.LastVersion, nextVersion)
+                    if j.repo.LastVersion != "" {
+                        triggerAutoAnalysis(j.repo, j.repo.LastVersion, nextVersion)
+                    }
+                    results <- outcome{idx: j.idx, lastChecked: now, lastVersion: nextVersion, changed: true}
+                } else {
+                    results <- outcome{idx: j.idx, lastChecked: now, lastVersion: j.repo.LastVersion, changed: false}
+                }
+            }
+        }()
+    }
+
+    go func() { wg.Wait(); close(results) }()
+
+    for r := range results {
+        library[r.idx].LastChecked = &r.lastChecked
+        if r.changed {
+            library[r.idx].LastVersion = r.lastVersion
+        }
+    }
 
 	saveLibrary(library)
 	log.Println("Version check completed")
