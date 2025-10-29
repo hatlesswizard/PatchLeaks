@@ -30,7 +30,25 @@
             {{- $cveIDs = (index .Analysis.Meta.Params "cve_ids") -}}
         {{- end -}}
     {{- end -}}
-    {{- if $cveIDs -}}
+    {{- $productName := "" -}}
+    {{- $oldVersion := "" -}}
+    {{- $newVersion := "" -}}
+    {{- if (index .Analysis.Meta.Params "product") -}}
+        {{- $productName = (index .Analysis.Meta.Params "product") -}}
+        {{- $oldVersion = (index .Analysis.Meta.Params "old_version") -}}
+        {{- $newVersion = (index .Analysis.Meta.Params "new_version") -}}
+    {{- else if (index .Analysis.Meta.Params "repo_name") -}}
+        {{- $productName = (index .Analysis.Meta.Params "repo_name") -}}
+        {{- $oldVersion = (index .Analysis.Meta.Params "old_version") -}}
+        {{- $newVersion = (index .Analysis.Meta.Params "new_version") -}}
+    {{- else if (index .Analysis.Meta.Params "old_folder") -}}
+        {{- $productName = "Folder Analysis" -}}
+        {{- $oldVersion = (index .Analysis.Meta.Params "old_folder") -}}
+        {{- $newVersion = (index .Analysis.Meta.Params "new_folder") -}}
+    {{- end -}}
+    {{- if $productName -}}
+    <title>PatchLeaks - Analysis Report {{$productName}} {{$oldVersion}} → {{$newVersion}}</title>
+    {{- else if $cveIDs -}}
     <title>PatchLeaks - Analysis Report for {{$cveIDs}}</title>
     {{- else -}}
     <title>PatchLeaks - Analysis Report</title>
@@ -719,6 +737,10 @@
                 {{- $newVersion := "" -}}
                 {{- if (index .Analysis.Meta.Params "product") -}}
                     {{- $productName = (index .Analysis.Meta.Params "product") -}}
+                    {{- $oldVersion = (index .Analysis.Meta.Params "old_version") -}}
+                    {{- $newVersion = (index .Analysis.Meta.Params "new_version") -}}
+                {{- else if (index .Analysis.Meta.Params "repo_name") -}}
+                    {{- $productName = (index .Analysis.Meta.Params "repo_name") -}}
                     {{- $oldVersion = (index .Analysis.Meta.Params "old_version") -}}
                     {{- $newVersion = (index .Analysis.Meta.Params "new_version") -}}
                 {{- else if (index .Analysis.Meta.Params "old_folder") -}}
