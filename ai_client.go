@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -38,9 +40,13 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 		maxTokens = 8192
 	}
 
-	for retry := 0; retry < MaxRetryAttempts; retry++ {
+    for retry := 0; retry < MaxRetryAttempts; retry++ {
 		var response string
 		var err error
+
+		if client.aiIOLogEnabled() {
+			client.aiIOLog("PROMPT", prompt, retry)
+		}
 
 		switch client.service {
 		case "ollama":
@@ -69,13 +75,89 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 				continue
 			}
 
+			if client.aiIOLogEnabled() {
+				client.aiIOLog("ERROR", fmt.Sprintf("%v", err), retry)
+			}
 			return fmt.Sprintf("Error: %v", err)
+		}
+
+		if client.aiIOLogEnabled() {
+			client.aiIOLog("RESPONSE", response, retry)
 		}
 
 		return response
 	}
 
 	return "Maximum retry attempts exceeded"
+}
+
+
+
+func (client *AIServiceClient) aiIOLogEnabled() bool {
+    if client == nil || client.config == nil || client.config.Parameters == nil {
+        return false
+    }
+    v, ok := client.config.Parameters["log_ai_io"]
+    if !ok {
+        return false
+    }
+    b, _ := v.(bool)
+    return b
+}
+
+func (client *AIServiceClient) aiIOLogMaxChars() int {
+    if client == nil || client.config == nil || client.config.Parameters == nil {
+        return 100000
+    }
+    if v, ok := client.config.Parameters["ai_log_max_chars"]; ok {
+        switch t := v.(type) {
+        case int:
+            if t > 0 {
+                return t
+            }
+        case float64:
+            if int(t) > 0 {
+                return int(t)
+            }
+        }
+    }
+    return 100000
+}
+
+func (client *AIServiceClient) aiIOLogFile() string {
+    if client == nil || client.config == nil || client.config.Parameters == nil {
+        return filepath.Join("logs", "ai_payloads.log")
+    }
+    if v, ok := client.config.Parameters["ai_log_file"].(string); ok && v != "" {
+        return v
+    }
+    return filepath.Join("logs", "ai_payloads.log")
+}
+
+func (client *AIServiceClient) aiIOLog(kind string, content string, attempt int) {
+    
+    max := client.aiIOLogMaxChars()
+    if len(content) > max {
+        content = content[:max] + "\n... [truncated]"
+    }
+    
+    path := client.aiIOLogFile()
+    _ = os.MkdirAll(filepath.Dir(path), 0755)
+
+    
+    timestamp := time.Now().Format(time.RFC3339)
+    header := fmt.Sprintf("[%s] service=%s attempt=%d kind=%s\n", timestamp, client.service, attempt+1, kind)
+    entry := header + content + "\n\n"
+
+    f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+    if err != nil {
+        log.Printf("Failed to open AI I/O log file: %v", err)
+        return
+    }
+    defer f.Close()
+    if _, err := f.WriteString(entry); err != nil {
+        log.Printf("Failed to write AI I/O log file: %v", err)
+    }
 }
 
 func (client *AIServiceClient) ollamaRequest(prompt string, temperature float64, maxTokens int) (string, error) {
