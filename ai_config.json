@@ -20,8 +20,11 @@
     "model": "claude-3-5-haiku-20241022"
   },
   "parameters": {
+    "temperature": 1.0,
     "num_ctx": 8192,
-    "temperature": 1
+    "log_ai_io": true,
+    "ai_log_max_chars": 100000,
+    "ai_log_file": "logs/ai_payloads.log"
   },
   "prompts": {
     "cve_analysis": "Analysis:\r\n{ai_response}\r\n\r\nQuestion: Do any of the vulnerabilities identified in the analysis match the description?\r\nReply strictly in this format: 'Description Matches: Yes/No' \r\n\r\nDescription:\r\n{cve_description}",
