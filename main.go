@@ -42,7 +42,7 @@ func main() {
 	serverPort := *port
 	if serverPort == 0 {
 		serverPort = findFreePort()
-		fmt.Printf("🔍 No port specified, using random free port: %d\n", serverPort)
+		fmt.Printf("No port specified, using random free port: %d\n", serverPort)
 	}
 
 	initializeDirectories()
