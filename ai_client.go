@@ -40,7 +40,7 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 		maxTokens = 8192
 	}
 
-    for retry := 0; retry < MaxRetryAttempts; retry++ {
+	for retry := 0; retry < MaxRetryAttempts; retry++ {
 		var response string
 		var err error
 
@@ -64,7 +64,6 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 		if err != nil {
 			if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate limit") {
 				backoff := calculateBackoff(retry)
-				log.Printf("Rate limited, backing off for %v seconds", backoff)
 				time.Sleep(time.Duration(backoff) * time.Second)
 				continue
 			}
@@ -94,70 +93,92 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 
 
 func (client *AIServiceClient) aiIOLogEnabled() bool {
-    if client == nil || client.config == nil || client.config.Parameters == nil {
-        return false
-    }
-    v, ok := client.config.Parameters["log_ai_io"]
-    if !ok {
-        return false
-    }
-    b, _ := v.(bool)
-    return b
+	if client == nil || client.config == nil || client.config.Parameters == nil {
+		return false
+	}
+	v, ok := client.config.Parameters["log_ai_io"]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
 }
 
 func (client *AIServiceClient) aiIOLogMaxChars() int {
-    if client == nil || client.config == nil || client.config.Parameters == nil {
-        return 100000
-    }
-    if v, ok := client.config.Parameters["ai_log_max_chars"]; ok {
-        switch t := v.(type) {
-        case int:
-            if t > 0 {
-                return t
-            }
-        case float64:
-            if int(t) > 0 {
-                return int(t)
-            }
-        }
-    }
-    return 100000
+	if v, ok := client.config.Parameters["ai_log_max_chars"]; ok {
+		switch t := v.(type) {
+		case int:
+			if t > 0 {
+				return t
+			}
+		case float64:
+			if int(t) > 0 {
+				return int(t)
+			}
+		}
+	}
+	return 100000
 }
 
 func (client *AIServiceClient) aiIOLogFile() string {
-    if client == nil || client.config == nil || client.config.Parameters == nil {
-        return filepath.Join("logs", "ai_payloads.log")
-    }
-    if v, ok := client.config.Parameters["ai_log_file"].(string); ok && v != "" {
-        return v
-    }
-    return filepath.Join("logs", "ai_payloads.log")
+	if v, ok := client.config.Parameters["ai_log_file"].(string); ok && v != "" {
+		return v
+	}
+	return filepath.Join("logs", "ai_payloads.log")
 }
 
 func (client *AIServiceClient) aiIOLog(kind string, content string, attempt int) {
-    
-    max := client.aiIOLogMaxChars()
-    if len(content) > max {
-        content = content[:max] + "\n... [truncated]"
-    }
-    
-    path := client.aiIOLogFile()
-    _ = os.MkdirAll(filepath.Dir(path), 0755)
+	max := client.aiIOLogMaxChars()
+	if len(content) > max {
+		content = content[:max] + "\n... [truncated]"
+	}
+	
+	path := client.aiIOLogFile()
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
 
-    
-    timestamp := time.Now().Format(time.RFC3339)
-    header := fmt.Sprintf("[%s] service=%s attempt=%d kind=%s\n", timestamp, client.service, attempt+1, kind)
-    entry := header + content + "\n\n"
+	timestamp := time.Now().Format(time.RFC3339)
+	header := fmt.Sprintf("[%s] service=%s attempt=%d kind=%s\n", timestamp, client.service, attempt+1, kind)
+	entry := header + content + "\n\n"
 
-    f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-    if err != nil {
-        log.Printf("Failed to open AI I/O log file: %v", err)
-        return
-    }
-    defer f.Close()
-    if _, err := f.WriteString(entry); err != nil {
-        log.Printf("Failed to write AI I/O log file: %v", err)
-    }
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(entry)
+}
+
+func (client *AIServiceClient) doHTTPRequest(url string, headers map[string]string, body []byte) ([]byte, error) {
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	httpClient := &http.Client{}
+	if client.timeout > 0 {
+		httpClient.Timeout = client.timeout
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return respBody, nil
 }
 
 func (client *AIServiceClient) ollamaRequest(prompt string, temperature float64, maxTokens int) (string, error) {
@@ -175,31 +196,15 @@ func (client *AIServiceClient) ollamaRequest(prompt string, temperature float64,
 	}
 
 	data, _ := json.Marshal(requestBody)
-	req, err := http.NewRequest("POST", url+"/api/generate", bytes.NewBuffer(data))
+	headers := map[string]string{"Content-Type": "application/json"}
+	
+	respBody, err := client.doHTTPRequest(url+"/api/generate", headers, data)
 	if err != nil {
 		return "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	httpClient := &http.Client{}
-	if client.timeout > 0 {
-		httpClient.Timeout = client.timeout
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", err
 	}
 
@@ -225,32 +230,18 @@ func (client *AIServiceClient) openAIRequest(prompt string, temperature float64,
 	}
 
 	data, _ := json.Marshal(requestBody)
-	req, err := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewBuffer(data))
+	headers := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + apiKey,
+	}
+
+	respBody, err := client.doHTTPRequest(baseURL+"/chat/completions", headers, data)
 	if err != nil {
 		return "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	httpClient := &http.Client{}
-	if client.timeout > 0 {
-		httpClient.Timeout = client.timeout
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", err
 	}
 
@@ -282,32 +273,18 @@ func (client *AIServiceClient) deepSeekRequest(prompt string, temperature float6
 	}
 
 	data, _ := json.Marshal(requestBody)
-	req, err := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewBuffer(data))
+	headers := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + apiKey,
+	}
+
+	respBody, err := client.doHTTPRequest(baseURL+"/chat/completions", headers, data)
 	if err != nil {
 		return "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	httpClient := &http.Client{}
-	if client.timeout > 0 {
-		httpClient.Timeout = client.timeout
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", err
 	}
 
@@ -330,8 +307,8 @@ func (client *AIServiceClient) claudeRequest(prompt string, temperature float64,
 	apiKey, _ := client.config.Claude["key"].(string)
 
 	requestBody := map[string]interface{}{
-		"model":      model,
-		"max_tokens": maxTokens,
+		"model":       model,
+		"max_tokens":  maxTokens,
 		"temperature": temperature,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
@@ -339,33 +316,19 @@ func (client *AIServiceClient) claudeRequest(prompt string, temperature float64,
 	}
 
 	data, _ := json.Marshal(requestBody)
-	req, err := http.NewRequest("POST", baseURL+"/messages", bytes.NewBuffer(data))
+	headers := map[string]string{
+		"Content-Type":      "application/json",
+		"x-api-key":         apiKey,
+		"anthropic-version": "2023-06-01",
+	}
+
+	respBody, err := client.doHTTPRequest(baseURL+"/messages", headers, data)
 	if err != nil {
 		return "", err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	httpClient := &http.Client{}
-	if client.timeout > 0 {
-		httpClient.Timeout = client.timeout
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", err
 	}
 
@@ -501,5 +464,30 @@ func AnalyzeWithCVE(aiResponse, cveDescription string) string {
 
 	client := NewAIServiceClient(config)
 	return client.GenerateResponse(prompt)
+}
+
+func GenerateCVEWriteup(cveID, cveDescription string, matchingFilesAnalysis []string) string {
+	if config == nil {
+		return "AI configuration not loaded"
+	}
+
+	allAnalysis := strings.Join(matchingFilesAnalysis, "\n\n---\n\n")
+	
+	prompt, exists := config.Prompts["cve_writeup"]
+	if !exists {
+		prompt = DefaultPrompts()["cve_writeup"]
+	}
+
+	prompt = strings.ReplaceAll(prompt, "{cve_id}", cveID)
+	prompt = strings.ReplaceAll(prompt, "{cve_description}", cveDescription)
+	prompt = strings.ReplaceAll(prompt, "{all_matching_files_analysis}", allAnalysis)
+
+	log.Printf("Generating writeup for %s", cveID)
+	
+	client := NewAIServiceClient(config)
+	writeup := client.GenerateResponse(prompt)
+	
+	log.Printf("Generated writeup for %s (%d chars)", cveID, len(writeup))
+	return writeup
 }
 
