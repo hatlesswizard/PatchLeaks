@@ -184,7 +184,6 @@ func getGitHubVersions(repoURL string) []string {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	
-	log.Printf("DEBUG: Fetching versions from: %s", url)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Error fetching versions from GitHub: %v", err)
@@ -193,7 +192,6 @@ func getGitHubVersions(repoURL string) []string {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("DEBUG: GitHub returned status: %d", resp.StatusCode)
 		return []string{}
 	}
 
@@ -236,7 +234,6 @@ func getGitHubVersions(repoURL string) []string {
 		return compareVersions(uniqueVersions[i], uniqueVersions[j]) > 0
 	})
 
-	log.Printf("DEBUG: Fetched %d versions from GitHub web interface", len(uniqueVersions))
 	return uniqueVersions
 }
 
@@ -259,7 +256,6 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	
-	log.Printf("DEBUG: Fetching tags from: %s", url)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Error fetching tags from GitHub: %v", err)
@@ -268,7 +264,6 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("DEBUG: GitHub returned status: %d", resp.StatusCode)
 		return []string{}
 	}
 
@@ -303,11 +298,8 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	}
 
 	if len(tags) == 0 {
-		log.Printf("DEBUG: No tags found for repository")
 		return []string{}
 	}
-
-	log.Printf("DEBUG: Found %d tags, checking release dates", len(tags))
 
 	
 	type TagWithDate struct {
@@ -362,12 +354,8 @@ func getGitHubVersionsByDate(repoURL string) []string {
                     datetime := extractDatetimeFromHTML(string(body))
                     if !datetime.IsZero() {
                         results <- tagDateResult{tag: j.tag, date: datetime}
-                        log.Printf("DEBUG: Tag %s has release date %s", j.tag, datetime.Format(time.RFC3339))
-                    } else {
-                        log.Printf("DEBUG: Could not extract datetime for tag %s", j.tag)
                     }
                 } else {
-                    log.Printf("DEBUG: Release page for tag %s returned status %d", j.tag, resp.StatusCode)
                     resp.Body.Close()
                 }
             }
@@ -399,7 +387,6 @@ func getGitHubVersionsByDate(repoURL string) []string {
 		result[i] = tagWithDate.Tag
 	}
 
-	log.Printf("DEBUG: Sorted %d tags by release date", len(result))
 	return result
 }
 
@@ -443,9 +430,7 @@ func extractDatetimeFromHTML(html string) time.Time {
 		log.Printf("Error parsing datetime %s: tried all supported formats", datetimeStr)
 	}
 
-	log.Printf("DEBUG: No matching <relative-time class=\"no-wrap\"> without threshold found")
 	return time.Time{}
-	
 }
 
 func loadAllAnalyses() []Analysis {
@@ -660,7 +645,6 @@ func parseVersionPart(part string) (int, error) {
 
 func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=%s", cpeName)
-	log.Printf("🔗 NVD API request: %s", url)
 	
 	client := &http.Client{Timeout: 60 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
@@ -677,7 +661,7 @@ func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("❌ NVD API returned status %d for CPE: %s", resp.StatusCode, cpeName)
+		log.Printf("NVD API returned status %d for CPE: %s", resp.StatusCode, cpeName)
 		return nil, fmt.Errorf("NVD API returned status %d", resp.StatusCode)
 	}
 
@@ -686,33 +670,24 @@ func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 		return nil, fmt.Errorf("failed to read response: %v", err)
 	}
 
-	log.Printf("📦 NVD response size: %d bytes", len(body))
-
 	var nvdResponse NVDResponse
 	if err := json.Unmarshal(body, &nvdResponse); err != nil {
-		log.Printf("❌ Failed to parse NVD response: %v", err)
-		log.Printf("Response preview: %s", string(body[:min(500, len(body))]))
+		log.Printf("Failed to parse NVD response: %v", err)
 		return nil, fmt.Errorf("failed to parse NVD response: %v", err)
 	}
 
-	log.Printf("📊 NVD reports %d total results, %d in this response", nvdResponse.TotalResults, len(nvdResponse.Vulnerabilities))
-
 	var cves []CVE
 	for _, vuln := range nvdResponse.Vulnerabilities {
-		cve := vuln.CVE
-		log.Printf("  ├─ %s: %s", cve.ID, cve.Description[:min(80, len(cve.Description))])
-		cves = append(cves, cve)
+		cves = append(cves, vuln.CVE)
 	}
 
-	log.Printf("✅ Parsed %d CVEs from NVD response", len(cves))
+	log.Printf("Parsed %d CVEs from NVD response", len(cves))
 	return cves, nil
 }
 
 func getCVEsForVersion(cpe, version string) ([]CVE, error) {
 	cpeVersion := strings.Replace(version, "-", ":", -1)
-	
 	cpeName := fmt.Sprintf("%s:%s", cpe, cpeVersion)
-	log.Printf("🔍 CPE query: %s (original version: %s)", cpeName, version)
 	return fetchCVEsFromNVD(cpeName)
 }
 
@@ -797,7 +772,7 @@ func updateAnalysisParams(analysisID string, params map[string]interface{}) erro
 }
 
 func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[string]AnalysisResult {
-	log.Printf("🔍 Running CVE-based analysis with params: %v", params)
+	log.Printf("Running CVE-based analysis with params: %v", params)
 	
 	repoName, _ := params["repo_name"].(string)
 	repoURL, _ := params["repo_url"].(string)
@@ -814,35 +789,27 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		return make(map[string]AnalysisResult)
 	}
 	
-	log.Printf("🔍 Analyzing %s: %s → %s using CVE data (CPE: %s)", repoName, oldVersion, newVersion, cpe)
+	log.Printf("Analyzing %s: %s -> %s using CVE data (CPE: %s)", repoName, oldVersion, newVersion, cpe)
 	
-	log.Printf("📡 Fetching CVEs for version %s using CPE: %s", oldVersion, cpe)
+	log.Printf("Fetching CVEs for OLD version %s (patch analysis approach)", oldVersion)
 	oldCVEs, err := getCVEsForVersion(cpe, oldVersion)
 	if err != nil {
-		log.Printf("❌ Failed to fetch CVEs for old version: %v", err)
-		log.Printf("💡 This might be due to:")
-		log.Printf("   - Invalid CPE format")
-		log.Printf("   - Version not found in NVD database")
-		log.Printf("   - NVD API connectivity issues")
-		log.Printf("   - Date parsing issues (now fixed)")
+		log.Printf("Failed to fetch CVEs for old version: %v", err)
 		return make(map[string]AnalysisResult)
 	}
 	
-	log.Printf("✅ Found %d CVEs for old version %s", len(oldCVEs), oldVersion)
+	log.Printf("Found %d CVEs for old version %s", len(oldCVEs), oldVersion)
 	if len(oldCVEs) == 0 {
-		log.Printf("⚠️  No CVEs found for version %s - analysis will proceed without CVE matching", oldVersion)
+		log.Printf("No CVEs found for version %s - proceeding without CVE matching", oldVersion)
 	} else {
 		cveIDs := make([]string, 0, len(oldCVEs))
 		for _, cve := range oldCVEs {
 			cveIDs = append(cveIDs, cve.ID)
 		}
 		params["cve_ids"] = strings.Join(cveIDs, ", ")
-		log.Printf("📋 CVE IDs stored in params: %s", params["cve_ids"])
 		
 		if err := updateAnalysisParams(analysisID, params); err != nil {
-			log.Printf("⚠️  Failed to update analysis params with CVE IDs: %v", err)
-		} else {
-			log.Printf("✅ Updated analysis file with CVE IDs for immediate UI display")
+			log.Printf("Failed to update analysis params with CVE IDs: %v", err)
 		}
 	}
 	
@@ -858,25 +825,6 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		return make(map[string]AnalysisResult)
 	}
 	
-	
-	var oldIndex, newIndex *FunctionIndex
-	if enableAI {
-		log.Printf("Indexing PHP files for function definitions...")
-		oldIndex, _ = ensureIndexed(oldPath)
-		newIndex, _ = ensureIndexed(newPath)
-		if oldIndex != nil || newIndex != nil {
-			oldCount := 0
-			newCount := 0
-			if oldIndex != nil {
-				oldCount = len(oldIndex.Classes)
-			}
-			if newIndex != nil {
-				newCount = len(newIndex.Classes)
-			}
-			log.Printf("✅ PHP indexing complete (old: %d classes, new: %d classes)", oldCount, newCount)
-		}
-	}
-	
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
@@ -884,10 +832,10 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 	
 	if enableAI && len(results) > 0 {
 		cveIDsStr, _ := params["cve_ids"].(string)
-		results = runAIAnalysisOnResults(results, cveIDsStr, *aiThreads, oldPath, newPath, oldIndex, newIndex)
+		results = runAIAnalysisOnResults(results, cveIDsStr, *aiThreads, newPath)
 	}
 	
-	log.Printf("🎯 CVE-based analysis complete: %d files with potential issues", len(results))
+	log.Printf("CVE-based analysis complete: %d files with potential issues", len(results))
 	return results
 }
 
