@@ -11,10 +11,11 @@ type FlashMessage struct {
 }
 
 type Analysis struct {
-	ID        string                    `json:"id,omitempty"`
-	Meta      AnalysisMeta              `json:"meta"`
-	Results   map[string]AnalysisResult `json:"results"`
-	VulnCount int                       `json:"vuln_count,omitempty"`
+	ID          string                    `json:"id,omitempty"`
+	Meta        AnalysisMeta              `json:"meta"`
+	Results     map[string]AnalysisResult `json:"results"`
+	VulnCount   int                       `json:"vuln_count,omitempty"`
+	CVEWriteups map[string]string         `json:"cve_writeups,omitempty"` // CVE ID -> Comprehensive writeup
 }
 
 type AnalysisMeta struct {
