@@ -193,6 +193,20 @@ func runLibraryAnalysisBackground(analysisID string, params map[string]interface
 					analysis.Meta.AIModel = model
 				}
 			}
+			
+			// Generate CVE writeups if CVE IDs are present
+			cveIDsStr := ""
+			if cveIDs, ok := params["cve_ids"].(string); ok && cveIDs != "" {
+				cveIDsStr = cveIDs
+			}
+			if cveIDsStr != "" && len(results) > 0 {
+			log.Printf("Generating CVE writeups for library analysis %s", analysisID)
+			writeups := generateCVEWriteupsForResults(results, cveIDsStr)
+			if len(writeups) > 0 {
+				analysis.CVEWriteups = writeups
+				log.Printf("Added %d CVE writeups to library analysis", len(writeups))
+			}
+		}
 		}
 	}
 
