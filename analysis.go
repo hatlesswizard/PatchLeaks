@@ -66,6 +66,19 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 				analysis.Meta.AIModel = model
 			}
 		}
+		
+		cveIDsStr := ""
+		if cveIDs, ok := params["cve_ids"].(string); ok && cveIDs != "" {
+			cveIDsStr = cveIDs
+		}
+		if cveIDsStr != "" && len(analyzedResults) > 0 {
+			log.Printf("Generating CVE writeups for analysis %s", analysisID)
+			writeups := generateCVEWriteupsForResults(analyzedResults, cveIDsStr)
+			if len(writeups) > 0 {
+				analysis.CVEWriteups = writeups
+				log.Printf("Added %d CVE writeups to analysis", len(writeups))
+			}
+		}
 	}
 
 	updatedData, _ := json.MarshalIndent(analysis, "", "  ")
@@ -114,32 +127,13 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 		return make(map[string]AnalysisResult)
 	}
 	
-	
-	var oldIndex, newIndex *FunctionIndex
-	if enableAI {
-		log.Printf("Indexing PHP files for function definitions...")
-		oldIndex, _ = ensureIndexed(oldPath)
-		newIndex, _ = ensureIndexed(newPath)
-		if oldIndex != nil || newIndex != nil {
-			oldCount := 0
-			newCount := 0
-			if oldIndex != nil {
-				oldCount = len(oldIndex.Classes)
-			}
-			if newIndex != nil {
-				newCount = len(newIndex.Classes)
-			}
-			log.Printf("✅ PHP indexing complete (old: %d classes, new: %d classes)", oldCount, newCount)
-		}
-	}
-	
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	
 	if enableAI && len(results) > 0 {
-		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, oldPath, newPath, oldIndex, newIndex)
+		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newPath)
 	}
 	
 	log.Printf("Analysis complete: %d files with potential issues", len(results))
@@ -185,32 +179,13 @@ func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult
 		return make(map[string]AnalysisResult)
 	}
 	
-	
-	var oldIndex, newIndex *FunctionIndex
-	if enableAI {
-		log.Printf("Indexing PHP files for function definitions...")
-		oldIndex, _ = ensureIndexed(oldPath)
-		newIndex, _ = ensureIndexed(newPath)
-		if oldIndex != nil || newIndex != nil {
-			oldCount := 0
-			newCount := 0
-			if oldIndex != nil {
-				oldCount = len(oldIndex.Classes)
-			}
-			if newIndex != nil {
-				newCount = len(newIndex.Classes)
-			}
-			log.Printf("✅ PHP indexing complete (old: %d classes, new: %d classes)", oldCount, newCount)
-		}
-	}
-	
 	diffs := compareDirectories(oldPath, newPath, extension)
 	log.Printf("Found %d file differences", len(diffs))
 	
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	
 	if enableAI && len(results) > 0 {
-		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, oldPath, newPath, oldIndex, newIndex)
+		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newPath)
 	}
 	
 	log.Printf("Library analysis complete: %d files with potential issues", len(results))
@@ -536,9 +511,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 			if diff != nil {
 				diffs = append(diffs, *diff)
 				successfulDiffs++
-				log.Printf("✅ Generated diff for %s with %d lines (total diffs: %d)", file, len(diff.Diff), len(diffs))
-			} else {
-				log.Printf("❌ Failed to generate diff for %s", file)
 			}
 		}
 	}
@@ -658,23 +630,18 @@ func filterByExtensions(files []string, extensions []string) []string {
 }
 
 func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
-	log.Printf("DEBUG: compareSingleFile called for %s (type: %s)", filename, fileType)
-	
 	if !validateFilename(filename) {
-		log.Printf("DEBUG: Filename validation failed for %s", filename)
 		return nil
 	}
 	
 	switch fileType {
 	case "deleted":
 		if oldPath == "" || !fileExists(oldPath) {
-			log.Printf("DEBUG: Deleted file check failed for %s (path: %s, exists: %v)", filename, oldPath, fileExists(oldPath))
 			return nil
 		}
 		
 		oldCode, err := readFileLines(oldPath)
 		if err != nil || len(oldCode) == 0 {
-			log.Printf("DEBUG: Failed to read deleted file %s: err=%v, lines=%d", filename, err, len(oldCode))
 			return nil
 		}
 		
@@ -687,7 +654,6 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 			diff = append(diff, "-"+line)
 		}
 		
-		log.Printf("DEBUG: Generated deleted diff for %s with %d lines", filename, len(diff))
 		return &DiffFile{
 			Filename: filename,
 			Diff:     diff,
@@ -696,13 +662,11 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 		
 	case "added":
 		if newPath == "" || !fileExists(newPath) {
-			log.Printf("DEBUG: Added file check failed for %s (path: %s, exists: %v)", filename, newPath, fileExists(newPath))
 			return nil
 		}
 		
 		newCode, err := readFileLines(newPath)
 		if err != nil || len(newCode) == 0 {
-			log.Printf("DEBUG: Failed to read added file %s: err=%v, lines=%d", filename, err, len(newCode))
 			return nil
 		}
 		
@@ -715,7 +679,6 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 			diff = append(diff, "+"+line)
 		}
 		
-		log.Printf("DEBUG: Generated added diff for %s with %d lines", filename, len(diff))
 		return &DiffFile{
 			Filename: filename,
 			Diff:     diff,
@@ -724,8 +687,6 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 		
 	case "modified":
 		if oldPath == "" || newPath == "" || !fileExists(oldPath) || !fileExists(newPath) {
-			log.Printf("DEBUG: Modified file check failed for %s (old: %s, new: %s, old_exists: %v, new_exists: %v)", 
-				filename, oldPath, newPath, fileExists(oldPath), fileExists(newPath))
 			return nil
 		}
 		
@@ -733,22 +694,18 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 		newCode, err2 := readFileLines(newPath)
 		
 		if err1 != nil || err2 != nil {
-			log.Printf("DEBUG: Failed to read modified file %s: old_err=%v, new_err=%v", filename, err1, err2)
 			return nil
 		}
 		
 		if len(oldCode) == 0 || len(newCode) == 0 {
-			log.Printf("DEBUG: Empty file content for %s: old_lines=%d, new_lines=%d", filename, len(oldCode), len(newCode))
 			return nil
 		}
 		
 		diff := generateUnifiedDiff(oldCode, newCode, oldPath, newPath)
 		if len(diff) == 0 {
-			log.Printf("DEBUG: Empty diff generated for %s", filename)
 			return nil
 		}
 		
-		log.Printf("DEBUG: Generated modified diff for %s with %d lines", filename, len(diff))
 		return &DiffFile{
 			Filename: filename,
 			Diff:     diff,
@@ -756,7 +713,6 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 		}
 	}
 	
-	log.Printf("DEBUG: Unknown file type %s for %s", fileType, filename)
 	return nil
 }
 
@@ -855,11 +811,8 @@ func getAllFiles(rootPath, extension string) map[string]FileInfo {
 }
 
 func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) []string {
-	log.Printf("DEBUG: generateUnifiedDiff called for %s (old: %d lines, new: %d lines)", filepath.Base(oldPath), len(oldLines), len(newLines))
-	
 	oldTempFile, err := os.CreateTemp("", "old-*.txt")
 	if err != nil {
-		log.Printf("Failed to create temp file for old content: %v", err)
 		return []string{}
 	}
 	defer os.Remove(oldTempFile.Name())
@@ -867,7 +820,6 @@ func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) [
 	
 	newTempFile, err := os.CreateTemp("", "new-*.txt")
 	if err != nil {
-		log.Printf("Failed to create temp file for new content: %v", err)
 		return []string{}
 	}
 	defer os.Remove(newTempFile.Name())
@@ -887,7 +839,6 @@ func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) [
 	output, err := cmd.CombinedOutput()
 	
 	if err != nil && cmd.ProcessState.ExitCode() != 1 {
-		log.Printf("diff command failed: %v", err)
 		return []string{}
 	}
 	
@@ -904,7 +855,6 @@ func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) [
 		}
 	}
 	
-	log.Printf("DEBUG: Generated diff with %d lines using system diff command", len(result))
 	return result
 }
 
@@ -1091,21 +1041,12 @@ func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) m
 	return results
 }
 
-func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, threadCount int, oldPath, newPath string, oldIndex, newIndex *FunctionIndex) map[string]AnalysisResult {
-	log.Printf("Running REAL AI analysis on %d results with %d threads...", len(results), threadCount)
+func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, threadCount int, newPath string) map[string]AnalysisResult {
+	log.Printf("Running AI analysis on %d results with %d threads", len(results), threadCount)
 	
 	if config == nil {
-		log.Printf("❌ AI config is nil - AI analysis will not work!")
+		log.Printf("AI config not loaded, skipping AI analysis")
 		return results
-	}
-	if svcConfig, ok := config.GetServiceConfig(config.Service); ok {
-		if model, ok := svcConfig["model"].(string); ok {
-			log.Printf("✅ AI config loaded: service=%s, model=%s", config.Service, model)
-		} else {
-			log.Printf("✅ AI config loaded: service=%s", config.Service)
-		}
-	} else {
-		log.Printf("✅ AI config loaded: service=%s", config.Service)
 	}
 	
 	if threadCount < 1 {
@@ -1125,12 +1066,21 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 	}
 	
 	if len(workItems) == 0 {
-		log.Printf("No files need AI analysis")
 		return results
 	}
-	if len(workItems) == 0 {
-		log.Printf("No files need AI analysis")
-		return results
+	
+	cveDescriptionCache := make(map[string]string)
+	if cveIDs != "" {
+		cveList := strings.Split(cveIDs, ",")
+		log.Printf("Pre-fetching %d CVE descriptions to avoid redundant NIST requests", len(cveList))
+		for _, cveID := range cveList {
+			cveID = strings.TrimSpace(cveID)
+			if cveID != "" {
+				description := GetCVEDescription(cveID)
+				cveDescriptionCache[cveID] = description
+			}
+		}
+		log.Printf("CVE descriptions cached for %d CVEs", len(cveDescriptionCache))
 	}
 	
 	log.Printf("Processing %d files with %d threads", len(workItems), threadCount)
@@ -1143,27 +1093,18 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			log.Printf("Worker %d started", workerID+1)
 			
 			for item := range workChan {
 				diffContent := strings.Join(item.result.Context, "\n")
 				
-				
 				enhancedDiff := diffContent
-				if oldIndex != nil || newIndex != nil {
-					if strings.HasSuffix(strings.ToLower(item.filename), ".php") {
-						calls := extractFunctionCallsFromDiff(diffContent, item.filename)
-						definitions := lookupFunctionDefinitions(calls, oldIndex, newIndex, item.filename)
-						if len(definitions) > 0 {
-							enhancedDiff = enhanceAIPromptWithFunctions(diffContent, definitions)
-							log.Printf("Worker %d: Enhanced diff with %d function definitions for %s", workerID+1, len(definitions), item.filename)
-						}
-					}
+				filePath := filepath.Join(newPath, item.filename)
+				functionContext, err := ExtractFunctionContext(filePath, diffContent, true)
+				if err == nil && functionContext != "" {
+					enhancedDiff = functionContext + diffContent
 				}
 				
-				log.Printf("Worker %d: Calling AI analysis for %s...", workerID+1, item.filename)
 				aiResponse := GetAIAnalysis(item.filename, enhancedDiff)
-				log.Printf("Worker %d: AI response for %s: %s", workerID+1, item.filename, aiResponse[:min(100, len(aiResponse))])
 				item.result.AIResponse = aiResponse
 				
 				if cveIDs != "" {
@@ -1174,26 +1115,18 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 					for _, cveID := range cveList {
 						cveID = strings.TrimSpace(cveID)
 						if cveID != "" {
-							log.Printf("Worker %d: Running AI CVE analysis for %s...", workerID+1, cveID)
-							
-							description := GetCVEDescription(cveID)
-							log.Printf("Worker %d: CVE description: %s", workerID+1, description[:min(100, len(description))])
-							
-							if item.result.AIResponse == "" {
-								item.result.AIResponse = GetAIAnalysis(item.filename, enhancedDiff)
-								log.Printf("Worker %d: AI analysis: %s", workerID+1, item.result.AIResponse[:min(100, len(item.result.AIResponse))])
+							description, exists := cveDescriptionCache[cveID]
+							if !exists {
+								description = "CVE description not available"
 							}
 							
 							cveAnalysis := AnalyzeWithCVE(item.result.AIResponse, description)
-							log.Printf("Worker %d: AI CVE analysis: %s", workerID+1, cveAnalysis[:min(100, len(cveAnalysis))])
-							
 							cveResult := parseAICVEResponse(cveAnalysis)
 							
 							item.result.CVEMatches[cveID] = CVEMatch{
 								Result:      cveResult,
 								Description: description,
 							}
-							log.Printf("Worker %d: CVE %s result: %s", workerID+1, cveID, cveResult)
 						}
 					}
 				}
@@ -1202,10 +1135,7 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 				item.result.VulnSeverity = determineSeverityFromAIResponse(aiResponse)
 				
 				resultChan <- item
-				log.Printf("Worker %d: ✅ AI analysis completed for %s", workerID+1, item.filename)
 			}
-			
-			log.Printf("Worker %d finished", workerID+1)
 		}(i)
 	}
 	
@@ -1230,8 +1160,53 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		}
 	}
 	
-	log.Printf("✅ All AI analysis completed: %d files processed", completedCount)
+	log.Printf("AI analysis completed: %d files processed", completedCount)
+	
+	if cveIDs != "" {
+		log.Printf("Generating CVE writeups for matched vulnerabilities")
+		generateCVEWriteupsForResults(results, cveIDs)
+	}
+	
 	return results
+}
+
+// generateCVEWriteupsForResults creates comprehensive writeups for each CVE that has matches
+func generateCVEWriteupsForResults(results map[string]AnalysisResult, cveIDs string) map[string]string {
+	writeups := make(map[string]string)
+	cveList := strings.Split(cveIDs, ",")
+	
+	for _, cveID := range cveList {
+		cveID = strings.TrimSpace(cveID)
+		if cveID == "" {
+			continue
+		}
+		
+		var matchingAnalyses []string
+		var cveDescription string
+		
+		for filename, result := range results {
+			if result.CVEMatches != nil {
+				if cveMatch, exists := result.CVEMatches[cveID]; exists && cveMatch.Result == "Yes" {
+					if cveDescription == "" {
+						cveDescription = cveMatch.Description
+					}
+					fileAnalysis := fmt.Sprintf("File: %s\n\nAI Analysis:\n%s", filename, result.AIResponse)
+					matchingAnalyses = append(matchingAnalyses, fileAnalysis)
+				}
+			}
+		}
+		
+		if len(matchingAnalyses) > 0 {
+			log.Printf("Generating writeup for %s (%d matching files)", cveID, len(matchingAnalyses))
+			writeup := GenerateCVEWriteup(cveID, cveDescription, matchingAnalyses)
+			writeups[cveID] = writeup
+		}
+	}
+	
+	if len(writeups) > 0 {
+		log.Printf("Generated %d CVE writeups", len(writeups))
+	}
+	return writeups
 }
 
 
@@ -1241,38 +1216,38 @@ func generateAIResponse(filename string, result AnalysisResult, cveIDs string) s
 	response.WriteString(fmt.Sprintf("AI Analysis for %s:\n\n", filename))
 	
 	if strings.Contains(result.VulnerabilityStatus, "vulnerabilities") {
-		response.WriteString("🚨 VULNERABILITIES DETECTED\n")
+		response.WriteString("VULNERABILITIES DETECTED\n")
 		response.WriteString("This file contains code changes that may introduce security vulnerabilities:\n")
 		response.WriteString("- Deprecated cryptographic functions (MD5, SHA1)\n")
 		response.WriteString("- Potential code injection points\n")
 		response.WriteString("- Unsafe input handling\n")
 		response.WriteString("- Authentication bypass possibilities\n\n")
 	} else if result.VulnerabilityStatus == "AI: Not Sure" {
-		response.WriteString("⚠️ SECURITY REVIEW REQUIRED\n")
+		response.WriteString("SECURITY REVIEW REQUIRED\n")
 		response.WriteString("This file contains security-related changes that need manual review:\n")
 		response.WriteString("- Authentication or authorization modifications\n")
 		response.WriteString("- Data handling changes\n")
 		response.WriteString("- Input/output processing updates\n\n")
 	} else {
-		response.WriteString("✅ NO VULNERABILITIES DETECTED\n")
+		response.WriteString("NO VULNERABILITIES DETECTED\n")
 		response.WriteString("This file appears to contain safe code changes:\n")
 		response.WriteString("- No obvious security vulnerabilities found\n")
 		response.WriteString("- Code changes seem to follow security best practices\n\n")
 	}
 	
 	if cveIDs != "" && result.CVEMatches != nil {
-		response.WriteString("🎯 CVE ANALYSIS RESULTS:\n")
+		response.WriteString("CVE ANALYSIS RESULTS:\n")
 		for cveID, match := range result.CVEMatches {
-			status := "❌"
+			status := "NO"
 			if match.Result == "Yes" {
-				status = "✅"
+				status = "YES"
 			}
-			response.WriteString(fmt.Sprintf("%s %s: %s\n", status, cveID, match.Description))
+			response.WriteString(fmt.Sprintf("[%s] %s: %s\n", status, cveID, match.Description))
 		}
 		response.WriteString("\n")
 	}
 	
-	response.WriteString("📋 SECURITY RECOMMENDATIONS:\n")
+	response.WriteString("SECURITY RECOMMENDATIONS:\n")
 	response.WriteString("- Review all authentication-related changes\n")
 	response.WriteString("- Test for potential injection vulnerabilities\n")
 	response.WriteString("- Verify input validation and sanitization\n")
