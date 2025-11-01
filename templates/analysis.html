@@ -47,7 +47,11 @@
         {{- $newVersion = (index .Analysis.Meta.Params "new_folder") -}}
     {{- end -}}
     {{- if $productName -}}
+        {{- if $cveIDs -}}
+    <title>PatchLeaks - Analysis Report {{$productName}} {{$oldVersion}} → {{$newVersion}} - {{$cveIDs}}</title>
+        {{- else -}}
     <title>PatchLeaks - Analysis Report {{$productName}} {{$oldVersion}} → {{$newVersion}}</title>
+        {{- end -}}
     {{- else if $cveIDs -}}
     <title>PatchLeaks - Analysis Report for {{$cveIDs}}</title>
     {{- else -}}
@@ -655,6 +659,142 @@
             color: #fff;
             border-color: rgba(255,255,255,0.3);
         }
+
+        .cve-writeup-section {
+            border-left: 4px solid var(--danger-color);
+            padding-left: 1.5rem;
+            margin-bottom: 2rem;
+            transition: all 0.3s ease;
+        }
+
+        .cve-writeup-section:hover {
+            border-left-color: #ff6b6b;
+        }
+
+        .writeup-content {
+            background: linear-gradient(135deg, rgba(231, 76, 60, 0.08) 0%, rgba(192, 57, 43, 0.05) 100%);
+            border: 1px solid rgba(231, 76, 60, 0.2);
+            border-radius: 12px;
+            margin-top: 1rem;
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.1);
+        }
+
+        .writeup-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 0.5rem;
+        }
+
+        .writeup-text {
+            color: #f8f9fa;
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.8;
+            font-size: 0.95rem;
+            background: transparent;
+            border: none;
+        }
+
+        .writeup-text h2 {
+            color: #fff;
+            font-size: 1.3rem;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid rgba(231, 76, 60, 0.3);
+        }
+
+        .writeup-text h3 {
+            color: #f8f9fa;
+            font-size: 1.1rem;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .writeup-text ul, .writeup-text ol {
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .writeup-text li {
+            margin-bottom: 0.5rem;
+        }
+
+        .writeup-text code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #ffa07a;
+        }
+
+        .writeup-text pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+
+        .writeup-text pre code {
+            background: transparent;
+            padding: 0;
+            color: #f8f9fa;
+        }
+
+        .writeup-text strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .writeup-text p {
+            margin-bottom: 0.75rem;
+        }
+
+        .writeup-text em {
+            font-style: italic;
+            color: #e0e0e0;
+        }
+
+        .writeup-text blockquote {
+            border-left: 4px solid rgba(231, 76, 60, 0.5);
+            padding-left: 1rem;
+            margin-left: 0;
+            margin-bottom: 1rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .badge-glow {
+            box-shadow: 0 0 20px rgba(231, 76, 60, 0.5);
+            animation: pulse-glow 2s infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(231, 76, 60, 0.5);
+            }
+            50% {
+                box-shadow: 0 0 30px rgba(231, 76, 60, 0.8);
+            }
+        }
+
+        .cve-writeup-section .btn-danger {
+            background: linear-gradient(135deg, var(--danger-color), #c0392b);
+            border: none;
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .cve-writeup-section .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4);
+        }
+
+        .cve-writeup-section .btn-danger .fa-chevron-down {
+            transition: transform 0.3s ease;
+        }
+
+        .cve-writeup-section .btn-danger[aria-expanded="true"] .fa-chevron-down {
+            transform: rotate(180deg);
+        }
     </style>
 </head>
 <body>
@@ -749,7 +889,11 @@
                     {{- $newVersion = (index .Analysis.Meta.Params "new_folder") -}}
                 {{- end -}}
                 {{- if $productName -}}
+                    {{- if $cveIDs -}}
+                <h2 class="display-5 fw-bold mb-3">Analysis Report {{$productName}} {{$oldVersion}} → {{$newVersion}} - {{$cveIDs}}</h2>
+                    {{- else -}}
                 <h2 class="display-5 fw-bold mb-3">Analysis Report {{$productName}} {{$oldVersion}} → {{$newVersion}}</h2>
+                    {{- end -}}
                 {{- else if $cveIDs -}}
                 <h2 class="display-5 fw-bold mb-3">Analysis Report for {{$cveIDs}}</h2>
                 {{- else -}}
@@ -781,6 +925,49 @@
                         </button>
                     </div>
                 </div>
+
+                {{if .Analysis.CVEWriteups}}
+                <div class="card mb-4 shadow">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="fas fa-shield-virus text-danger me-2 fs-5"></i>
+                        <h5 class="mb-0">CVE Security Analysis & Writeups</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-4">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Comprehensive security analysis generated by AI for each confirmed CVE match. 
+                            Click on a CVE to view the detailed writeup including vulnerability background, technical details, patch analysis, and PoC guide.
+                        </p>
+                        {{range $cveID, $writeup := .Analysis.CVEWriteups}}
+                        <div class="cve-writeup-section mb-4">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-danger badge-glow me-3 px-3 py-2">
+                                        <i class="fas fa-bug me-1"></i>{{$cveID}}
+                                    </span>
+                                    <button class="btn btn-sm btn-danger" type="button" data-bs-toggle="collapse" 
+                                            data-bs-target="#writeup-{{$cveID}}" aria-expanded="false">
+                                        <i class="fas fa-file-alt me-2"></i>View Security Analysis
+                                        <i class="fas fa-chevron-down ms-2"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="collapse" id="writeup-{{$cveID}}">
+                                <div class="writeup-content p-4 mt-3">
+                                    <div class="writeup-header mb-3">
+                                        <span class="badge bg-info text-dark">
+                                            <i class="fas fa-robot me-1"></i>AI-Generated Analysis
+                                        </span>
+                                    </div>
+                                    <textarea style="display:none" id="writeup-template-{{$cveID}}">{{$writeup}}</textarea>
+                                    <div class="writeup-text mb-0" id="writeup-content-{{$cveID}}"></div>
+                                </div>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
 
                 {{if .Analysis.Results}}
                 <div class="mt-5">
@@ -1053,8 +1240,26 @@
 
     <script src="/static/js/bootstrap.bundle.min.js"></script>
     <script src="/static/js/notifications.js"></script>
+    <script src="/static/js/marked.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', () => {
+        // Render markdown for CVE writeups from hidden textareas
+        document.querySelectorAll('textarea[id^="writeup-template-"]').forEach(textarea => {
+            const cveId = textarea.id.replace('writeup-template-', '');
+            const targetDiv = document.getElementById('writeup-content-' + cveId);
+            
+            if (targetDiv && typeof marked !== 'undefined') {
+                try {
+                    const markdownContent = textarea.value;
+                    targetDiv.innerHTML = marked.parse(markdownContent);
+                } catch (error) {
+                    console.error('Error parsing markdown for ' + cveId + ':', error);
+                    // Fallback: display as pre-formatted text
+                    targetDiv.innerHTML = '<pre>' + textarea.value + '</pre>';
+                }
+            }
+        });
+
         window.addEventListener('scroll', () => {
             const navbar = document.querySelector('.navbar');
             if (window.scrollY > 50) {
