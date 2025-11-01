@@ -85,10 +85,10 @@ func init() {
 	for _, tmplFile := range templateFiles {
 		_, err := templates.ParseFiles(tmplFile)
 		if err != nil {
-			parseErrors = append(parseErrors, fmt.Sprintf("  ❌ %s: %v", tmplFile, err))
+			parseErrors = append(parseErrors, fmt.Sprintf("  [ERROR] %s: %v", tmplFile, err))
 			log.Printf("ERROR parsing %s: %v", tmplFile, err)
 		} else {
-			log.Printf("  ✅ %s parsed successfully", tmplFile)
+			log.Printf("  %s parsed successfully", tmplFile)
 		}
 	}
 	
@@ -105,7 +105,7 @@ func init() {
 		templates = nil
 	} else {
 		log.Println("========================================")
-		log.Println("✅ All templates parsed successfully!")
+		log.Println("All templates parsed successfully!")
 		log.Println("========================================")
 	}
 }
