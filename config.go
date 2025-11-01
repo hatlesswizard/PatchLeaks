@@ -131,6 +131,43 @@ Reply strictly in this format: 'Description Matches: Yes/No'
 
 Description:
 {cve_description}`,
+		"cve_writeup": `You are a security researcher analyzing a patched vulnerability.
+
+CVE ID: {cve_id}
+CVE Description: {cve_description}
+
+Code Changes Analysis:
+{all_matching_files_analysis}
+
+Create a comprehensive security analysis article with these sections:
+
+## 1. Vulnerability Background
+- What is this vulnerability?
+- Why is it critical/important?
+- What systems/versions are affected?
+
+## 2. Technical Details
+- Root cause analysis
+- Attack vector and exploitation conditions
+- Security implications
+
+## 3. Patch Analysis
+- What code changes were made?
+- How do these changes fix the vulnerability?
+- Security improvements introduced
+
+## 4. Proof of Concept (PoC) Guide
+- Prerequisites for exploitation
+- Step-by-step exploitation approach
+- Expected behavior vs exploited behavior
+- How to verify the vulnerability exists
+
+## 5. Recommendations
+- Mitigation strategies
+- Detection methods
+- Best practices to prevent similar issues
+
+Write in a clear, technical style suitable for security professionals.`,
 	}
 }
 
