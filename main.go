@@ -5,16 +5,16 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
 	"log"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
-
-	"github.com/gorilla/mux"
-	"github.com/gorilla/sessions"
 )
 
 const (
@@ -26,45 +26,50 @@ var (
 	sessionStore      *sessions.CookieStore
 	basicAuthUsername string
 	basicAuthPassword string
-	
-	port      = flag.Int("p", 0, "Port to run the server on (default: random free port)")
-	host      = flag.String("host", DefaultHost, "Host address to bind to")
-	aiThreads = flag.Int("t", 1, "Number of threads for AI analysis (default: 1)")
+	port              = flag.Int("p", 0, "Port to run the server on (default: random free port)")
+	host              = flag.String("host", DefaultHost, "Host address to bind to")
+	aiThreads         = flag.Int("t", 1, "Number of threads for AI analysis (default: 1)")
+	testRealWorld     = flag.Bool("test-real-world", false, "Run real-world tests instead of starting server")
+	testLanguages     = flag.String("language", "", "Comma-separated list of languages to test (php,javascript,python)")
 )
 
 func main() {
 	flag.Parse()
-
+	GetBuiltinDetector()
+	if *testRealWorld {
+		initializeDirectories()
+		var languages []string
+		if *testLanguages != "" {
+			languages = strings.Split(*testLanguages, ",")
+			for i, lang := range languages {
+				languages[i] = strings.TrimSpace(lang)
+			}
+		}
+		log.Printf("Running real-world tests...")
+		if err := RunRealWorldTests(languages); err != nil {
+			log.Fatalf("Real-world tests failed: %v", err)
+		}
+		log.Printf("All real-world tests passed!")
+		os.Exit(0)
+	}
 	basicAuthUsername = generateRandomMD5()
 	basicAuthPassword = generateRandomMD5()
-
-	
 	serverPort := *port
 	if serverPort == 0 {
 		serverPort = findFreePort()
 		fmt.Printf("No port specified, using random free port: %d\n", serverPort)
 	}
-
 	initializeDirectories()
-
-	
 	var err error
 	config, err = LoadConfig()
 	if err != nil {
 		log.Printf("Warning: Could not load config, using defaults: %v", err)
 		config = DefaultConfig()
 	}
-
 	sessionStore = sessions.NewCookieStore([]byte(generateRandomMD5()))
-
-	
 	router := setupRouter()
-
 	printBanner(basicAuthUsername, basicAuthPassword, *host, serverPort, *aiThreads)
-
-	
 	go startScheduler()
-
 	addr := fmt.Sprintf("%s:%d", *host, serverPort)
 	log.Printf("Starting server on %s", addr)
 	if err := http.ListenAndServe(addr, router); err != nil {
@@ -74,42 +79,26 @@ func main() {
 
 func setupRouter() *mux.Router {
 	r := mux.NewRouter()
-
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-
-	
 	r.HandleFunc("/", indexHandler).Methods("GET")
 	r.HandleFunc("/analysis/{id}", viewAnalysisHandler).Methods("GET")
 	r.HandleFunc("/get_versions/{product}", getVersionsHandler).Methods("GET")
-
-	
 	protected := r.PathPrefix("/").Subrouter()
 	protected.Use(basicAuthMiddleware)
 	protected.Use(rateLimitMiddleware)
-
 	r.HandleFunc("/save-analysis", saveAnalysisHandler).Methods("POST")
 	protected.HandleFunc("/delete-analysis/{id}", deleteAnalysisHandler).Methods("POST")
-
-	
 	r.HandleFunc("/manage-products", manageProductsHandler).Methods("GET", "POST")
 	protected.HandleFunc("/delete-product/{name}", deleteProductHandler).Methods("GET")
-
 	r.HandleFunc("/products", productsHandler).Methods("GET", "POST")
 	r.HandleFunc("/folder", folderHandler).Methods("GET", "POST")
-
-	
 	r.HandleFunc("/library", libraryHandler).Methods("GET", "POST")
 	protected.HandleFunc("/library/delete/{id}", deleteLibraryRepoHandler).Methods("POST")
 	protected.HandleFunc("/library/toggle/{id}", toggleLibraryRepoHandler).Methods("POST")
 	protected.HandleFunc("/library/check-now", checkVersionsNowHandler).Methods("POST")
-	
 	protected.HandleFunc("/ai-settings", aiSettingsHandler).Methods("GET", "POST")
 	protected.HandleFunc("/reset-prompts", resetPromptsHandler).Methods("POST")
-
-	
 	r.HandleFunc("/reports", reportsHandler).Methods("GET")
-
-
 	return r
 }
 
@@ -135,20 +124,17 @@ func initializeDirectories() {
 		"saved_analyses",
 		"logs",
 	}
-
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			log.Fatalf("Failed to create directory %s: %v", dir, err)
 		}
 	}
-
 	productsFile := filepath.Join("products", "products.json")
 	if _, err := os.Stat(productsFile); os.IsNotExist(err) {
 		if err := os.WriteFile(productsFile, []byte("{}"), 0644); err != nil {
 			log.Printf("Warning: Could not create products.json: %v", err)
 		}
 	}
-
 	libraryFile := filepath.Join("products", "library.json")
 	if _, err := os.Stat(libraryFile); os.IsNotExist(err) {
 		if err := os.WriteFile(libraryFile, []byte("[]"), 0644); err != nil {
@@ -163,17 +149,14 @@ func printBanner(username, password, host string, port, aiThreads int) {
 	maxWidth := 67
 	urlLine := fmt.Sprintf("║  Server URL:  %s", serverURL)
 	threadsLine := fmt.Sprintf("║  AI Threads:  %s", aiThreadsStr)
-
 	for len(urlLine) < maxWidth {
 		urlLine += " "
 	}
 	urlLine += "║"
-	
 	for len(threadsLine) < maxWidth {
 		threadsLine += " "
 	}
 	threadsLine += "║"
-	
 	banner := fmt.Sprintf(`
 ╔════════════════════════════════════════════════════════════════╗
 ║                      PatchLeaks Started                        ║
@@ -191,11 +174,9 @@ func printBanner(username, password, host string, port, aiThreads int) {
 ║  They are randomly generated each time the app starts.         ║
 ╚════════════════════════════════════════════════════════════════╝
 `, urlLine, threadsLine, username, password)
-
 	fmt.Println(banner)
 }
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
-
