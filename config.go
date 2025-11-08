@@ -24,12 +24,10 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return DefaultConfig(), nil
 	}
-
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
-
 	defaultConfig := DefaultConfig()
 	if config.Ollama == nil {
 		config.Ollama = defaultConfig.Ollama
@@ -43,10 +41,24 @@ func LoadConfig() (*Config, error) {
 	if config.Claude == nil {
 		config.Claude = defaultConfig.Claude
 	}
+	if config.Parameters == nil || len(config.Parameters) == 0 {
+		config.Parameters = defaultConfig.Parameters
+	} else {
+		for key, value := range defaultConfig.Parameters {
+			if _, exists := config.Parameters[key]; !exists {
+				config.Parameters[key] = value
+			}
+		}
+	}
 	if config.Prompts == nil || len(config.Prompts) == 0 {
 		config.Prompts = defaultConfig.Prompts
+	} else {
+		for key, value := range defaultConfig.Prompts {
+			if _, exists := config.Prompts[key]; !exists {
+				config.Prompts[key] = value
+			}
+		}
 	}
-
 	return &config, nil
 }
 
@@ -96,8 +108,9 @@ func DefaultConfig() *Config {
 			"base_url": "https://api.anthropic.com/v1",
 		},
 		Parameters: map[string]interface{}{
-			"temperature": 1.0,
-			"num_ctx":     8192,
+			"temperature":            1.0,
+			"num_ctx":                8192,
+			"enable_context_analysis": true,
 		},
 		Prompts: DefaultPrompts(),
 	}
@@ -106,68 +119,53 @@ func DefaultConfig() *Config {
 func DefaultPrompts() map[string]string {
 	return map[string]string{
 		"main_analysis": `Analyze the provided code diff for security fixes.
-
 Instructions:
 1. Your answer MUST strictly follow the answer format outlined below.
 2. Always include the vulnerability name if one exists.
 3. There may be multiple vulnerabilities. For each, provide a separate entry following the structure.
 4. Even if you are uncertain whether a vulnerability exists, follow the structure and indicate your uncertainty.
-
 Answer Format for Each Vulnerability:
     Vulnerability Existed: [yes/no/not sure]
     [Vulnerability Name] [File] [Lines]
     [Old Code]
     [Fixed Code]
-
 Additional Details:
     File: {file_path}
     Diff Content:
     {diff_content}`,
 		"cve_analysis": `Analysis:
 {ai_response}
-
 Question: Do any of the vulnerabilities identified in the analysis match the description?
-Reply strictly in this format: 'Description Matches: Yes/No' 
-
+Reply strictly in this format: 'Description Matches: Yes/No'
 Description:
 {cve_description}`,
 		"cve_writeup": `You are a security researcher analyzing a patched vulnerability.
-
 CVE ID: {cve_id}
 CVE Description: {cve_description}
-
 Code Changes Analysis:
 {all_matching_files_analysis}
-
 Create a comprehensive security analysis article with these sections:
-
 ## 1. Vulnerability Background
 - What is this vulnerability?
 - Why is it critical/important?
 - What systems/versions are affected?
-
 ## 2. Technical Details
 - Root cause analysis
 - Attack vector and exploitation conditions
 - Security implications
-
 ## 3. Patch Analysis
 - What code changes were made?
 - How do these changes fix the vulnerability?
 - Security improvements introduced
-
 ## 4. Proof of Concept (PoC) Guide
 - Prerequisites for exploitation
 - Step-by-step exploitation approach
 - Expected behavior vs exploited behavior
 - How to verify the vulnerability exists
-
 ## 5. Recommendations
 - Mitigation strategies
 - Detection methods
 - Best practices to prevent similar issues
-
 Write in a clear, technical style suitable for security professionals.`,
 	}
 }
-
