@@ -15,7 +15,7 @@ type Analysis struct {
 	Meta        AnalysisMeta              `json:"meta"`
 	Results     map[string]AnalysisResult `json:"results"`
 	VulnCount   int                       `json:"vuln_count,omitempty"`
-	CVEWriteups map[string]string         `json:"cve_writeups,omitempty"` // CVE ID -> Comprehensive writeup
+	CVEWriteups map[string]string         `json:"cve_writeups,omitempty"`
 }
 
 type AnalysisMeta struct {
@@ -30,11 +30,11 @@ type AnalysisMeta struct {
 }
 
 type AnalysisResult struct {
-	Context              []string               `json:"context"`
-	AIResponse           string                 `json:"ai_response,omitempty"`
-	VulnerabilityStatus  string                 `json:"vulnerability_status,omitempty"`
-	VulnSeverity         string                 `json:"vuln_severity,omitempty"`
-	CVEMatches           map[string]CVEMatch    `json:"cve_matches,omitempty"`
+	Context             []string            `json:"context"`
+	AIResponse          string              `json:"ai_response,omitempty"`
+	VulnerabilityStatus string              `json:"vulnerability_status,omitempty"`
+	VulnSeverity        string              `json:"vuln_severity,omitempty"`
+	CVEMatches          map[string]CVEMatch `json:"cve_matches,omitempty"`
 }
 
 type CVEMatch struct {
@@ -43,19 +43,19 @@ type CVEMatch struct {
 }
 
 type Pagination struct {
-	Page       int    `json:"page"`
-	PerPage    int    `json:"per_page"`
-	Filter     string `json:"filter"`
-	Search     string `json:"search"`
-	TotalItems int    `json:"total_items"`
-	TotalPages int    `json:"total_pages"`
-	HasPrev    bool   `json:"has_prev"`
-	HasNext    bool   `json:"has_next"`
-	PrevPage   int    `json:"prev_page,omitempty"`
-	NextPage   int    `json:"next_page,omitempty"`
-	StartItem  int    `json:"start_item"`
-	EndItem    int    `json:"end_item"`
-	PageNumbers []int `json:"page_numbers"`
+	Page        int    `json:"page"`
+	PerPage     int    `json:"per_page"`
+	Filter      string `json:"filter"`
+	Search      string `json:"search"`
+	TotalItems  int    `json:"total_items"`
+	TotalPages  int    `json:"total_pages"`
+	HasPrev     bool   `json:"has_prev"`
+	HasNext     bool   `json:"has_next"`
+	PrevPage    int    `json:"prev_page,omitempty"`
+	NextPage    int    `json:"next_page,omitempty"`
+	StartItem   int    `json:"start_item"`
+	EndItem     int    `json:"end_item"`
+	PageNumbers []int  `json:"page_numbers"`
 }
 
 type Product struct {
@@ -64,15 +64,15 @@ type Product struct {
 }
 
 type LibraryRepo struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	RepoURL      string    `json:"repo_url"`
-	AIService    string    `json:"ai_service"`
-	CPE          string    `json:"cpe,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	LastChecked  *time.Time `json:"last_checked,omitempty"`
-	LastVersion  string    `json:"last_version,omitempty"`
-	AutoScan     bool      `json:"auto_scan"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	RepoURL     string     `json:"repo_url"`
+	AIService   string     `json:"ai_service"`
+	CPE         string     `json:"cpe,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastChecked *time.Time `json:"last_checked,omitempty"`
+	LastVersion string     `json:"last_version,omitempty"`
+	AutoScan    bool       `json:"auto_scan"`
 }
 
 type DiffFile struct {
@@ -80,7 +80,6 @@ type DiffFile struct {
 	Diff     []string `json:"diff"`
 	Type     string   `json:"type"`
 }
-
 
 type VersionInfo struct {
 	Version   string    `json:"version"`
@@ -101,21 +100,17 @@ func (c *CVE) UnmarshalJSON(data []byte) error {
 		Lang  string `json:"lang"`
 		Value string `json:"value"`
 	}
-	
 	type TempCVE struct {
 		ID           string           `json:"id"`
 		Descriptions []NVDDescription `json:"descriptions"`
 		Published    string           `json:"published"`
 		LastModified string           `json:"lastModified"`
 	}
-	
 	var temp TempCVE
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}
-	
 	c.ID = temp.ID
-	
 	for _, desc := range temp.Descriptions {
 		if desc.Lang == "en" {
 			c.Description = desc.Value
@@ -125,12 +120,9 @@ func (c *CVE) UnmarshalJSON(data []byte) error {
 	if c.Description == "" && len(temp.Descriptions) > 0 {
 		c.Description = temp.Descriptions[0].Value
 	}
-	
 	c.Published = parseNVDate(temp.Published)
 	c.Modified = parseNVDate(temp.LastModified)
-	
 	c.Severity = "UNKNOWN"
-	
 	return nil
 }
 
@@ -138,7 +130,6 @@ func parseNVDate(dateStr string) time.Time {
 	if dateStr == "" {
 		return time.Time{}
 	}
-	
 	formats := []string{
 		"2006-01-02T15:04:05.000",
 		"2006-01-02T15:04:05.000Z",
@@ -147,22 +138,19 @@ func parseNVDate(dateStr string) time.Time {
 		"2006-01-02T15:04:05.000-07:00",
 		"2006-01-02T15:04:05-07:00",
 	}
-	
 	for _, format := range formats {
 		if t, err := time.Parse(format, dateStr); err == nil {
 			return t
 		}
 	}
-	
 	return time.Time{}
 }
 
 type NVDResponse struct {
-	ResultsPerPage int `json:"resultsPerPage"`
-	StartIndex     int `json:"startIndex"`
-	TotalResults   int `json:"totalResults"`
+	ResultsPerPage  int `json:"resultsPerPage"`
+	StartIndex      int `json:"startIndex"`
+	TotalResults    int `json:"totalResults"`
 	Vulnerabilities []struct {
 		CVE CVE `json:"cve"`
 	} `json:"vulnerabilities"`
 }
-
