@@ -2015,7 +2015,7 @@ def add_product():
     <script>
         hljs.highlightAll();
         
-        // Throttle function for performance
+        
         function throttle(func, limit) {
             let inThrottle;
             return function() {
@@ -2029,7 +2029,7 @@ def add_product():
             }
         }
         
-        // Debounce function for performance
+        
         function debounce(func, wait) {
             let timeout;
             return function executedFunction(...args) {
@@ -2073,7 +2073,7 @@ def add_product():
             document.getElementById('tempValue').textContent = e.target.value;
         });
 
-        // Throttled scroll handler for better performance
+        
         const handleScroll = throttle(() => {
             const scrolled = window.scrollY > 100;
             const scrollIndicator = document.querySelector('.scroll-indicator');
@@ -2090,7 +2090,7 @@ def add_product():
                     navbar.classList.remove('scrolled');
                 }
             }
-        }, 16); // ~60fps
+        }, 16); 
 
         window.addEventListener('scroll', handleScroll, { passive: true });
 
@@ -2118,7 +2118,7 @@ def add_product():
             document.getElementById('mobileMenu')?.classList.remove('active');
         });
         
-        // Disable parallax on mobile and optimize for desktop
+        
         if (window.innerWidth > 768) {
             let ticking = false;
             let mouseX = 0.5;
@@ -2145,7 +2145,7 @@ def add_product():
                 }
             }, { passive: true });
         } else {
-            // Remove parallax elements on mobile to improve performance
+            
             document.querySelectorAll('.parallax-element').forEach(el => {
                 el.style.transform = 'none';
             });
@@ -2392,15 +2392,15 @@ def add_product():
             function handleScroll() {
                 const stickyRect = stickySection.getBoundingClientRect();
                 const scrollSection = document.getElementById('folder-analysis');
-                // Only run scroll lock logic if sticky is in view and progress < 1 and NOT bypassed
+                
                 if (bypassStickyLock || !(stickyRect.top <= 0 && stickyRect.bottom > 0 && progressValue < 1)) {
                     lastScrollY = window.scrollY;
                     if (!animationFrame) {
                         animationFrame = requestAnimationFrame(updateTransformation);
                     }
-                    return; // No scroll lock needed
+                    return; 
                 }
-                // Only block if sticky is at top of viewport (user is in sticky) and trying to scroll down
+                
                 const stickyBottom = stickyRect.bottom + window.scrollY;
                 if (window.scrollY + window.innerHeight > stickyBottom && window.scrollY > lastScrollY) {
                     window.scrollTo({ top: stickyBottom - window.innerHeight, behavior: 'auto' });
@@ -2428,26 +2428,26 @@ def add_product():
         });
         
         let bypassStickyLock = false;
-        // Listen for nav link clicks to set bypass flag
+        
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.navbar-nav .nav-link[href^="#"]').forEach(link => {
                 link.addEventListener('click', function() {
                     bypassStickyLock = true;
-                    setTimeout(() => { bypassStickyLock = false; }, 2000); // Reset after 2s for safety
+                    setTimeout(() => { bypassStickyLock = false; }, 2000); 
                 });
             });
         });
 
     </script>
     <script>
-    // ... existing JS ...
+    
     document.addEventListener('DOMContentLoaded', function() {
-        // Scrollspy logic - optimized with caching and throttling
+        
         const sections = Array.from(document.querySelectorAll('.scroll-section[id]'));
         const navLinks = Array.from(document.querySelectorAll('.navbar-nav .nav-link[href^="#"]'));
         const sectionOffsets = new Map();
         
-        // Cache section offsets
+        
         function updateSectionOffsets() {
             sections.forEach(section => {
                 sectionOffsets.set(section.id, section.offsetTop - 120);
@@ -2461,14 +2461,14 @@ def add_product():
             const scrollY = window.scrollY;
             let current = '';
             
-            // Find current section efficiently
+            
             for (const section of sections) {
                 if (scrollY >= sectionOffsets.get(section.id)) {
                     current = section.id;
                 }
             }
 
-            // Update nav links only if changed
+            
             navLinks.forEach(link => {
                 const isActive = link.getAttribute('href') === '#' + current;
                 if (isActive && !link.classList.contains('active')) {
@@ -2477,12 +2477,12 @@ def add_product():
                     link.classList.remove('active');
                 }
             });
-        }, 100); // Throttle to 10fps for scrollspy
+        }, 100); 
 
         window.addEventListener('scroll', onScroll, { passive: true });
-        onScroll(); // run on load
+        onScroll(); 
 
-        // Blur nav links after click to prevent double highlight
+        
         navLinks.forEach(link => {
             link.addEventListener('click', function() {
                 this.blur();
