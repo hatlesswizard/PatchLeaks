@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PatchLeaks - Dashboard</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/fontawesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --primary-blue: #4169E1;
+            --accent-color: #6c5ce7;
+            --code-bg: #0a0e14;
+            --dark-bg: #0a0b10;
+            --card-bg: #121520;
+            --success-color: #00b894;
+            --danger-color: #e74c3c;
+            --warning-color: #f39c12;
+            --info-color: #3498db;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--dark-bg) 0%, #16171d 100%);
+            color: #f8f9fa;
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow-x: hidden;
+        }
+
+        .navbar {
+            background: rgba(10, 11, 16, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding: 1rem 2rem;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .nav-link {
+            color: rgba(255,255,255,0.7);
+            margin: 0 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            color: #fff;
+        }
+
+        .nav-link.active {
+            color: var(--primary-blue) !important;
+            font-weight: 500;
+        }
+
+        .main-container {
+            padding-top: 6rem;
+            padding-bottom: 3rem;
+        }
+
+        .kpi-card {
+            background: linear-gradient(135deg, var(--card-bg) 0%, rgba(18, 21, 32, 0.95) 100%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-blue), var(--accent-color));
+        }
+
+        .kpi-card::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            right: -20px;
+            width: 150px;
+            height: 150px;
+            background: radial-gradient(circle, rgba(65,105,225,0.15) 0%, transparent 70%);
+            border-radius: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 20px 60px -10px rgba(65,105,225,0.4);
+            border-color: rgba(65,105,225,0.5);
+        }
+
+        .kpi-card:hover::after {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: translateY(-50%) scale(1); }
+            50% { opacity: 0.7; transform: translateY(-50%) scale(1.1); }
+        }
+
+        .kpi-value {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.8) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0.5rem 0;
+            letter-spacing: -1px;
+        }
+
+        .kpi-label {
+            color: rgba(255,255,255,0.7);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .kpi-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+            margin-top: 0.5rem;
+            font-weight: 600;
+        }
+
+        .kpi-change.positive {
+            background: rgba(0, 184, 148, 0.2);
+            color: var(--success-color);
+        }
+
+        .kpi-change.negative {
+            background: rgba(231, 76, 60, 0.2);
+            color: var(--danger-color);
+        }
+
+        .kpi-icon {
+            width: 70px;
+            height: 70px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin-bottom: 1.25rem;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 1;
+        }
+
+        .kpi-icon::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 16px;
+            padding: 2px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+
+        .kpi-icon.blue {
+            background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
+        }
+
+        .kpi-icon.green {
+            background: linear-gradient(135deg, var(--success-color), #20bf6b);
+        }
+
+        .kpi-icon.orange {
+            background: linear-gradient(135deg, var(--warning-color), #f19066);
+        }
+
+        .kpi-icon.red {
+            background: linear-gradient(135deg, var(--danger-color), #c0392b);
+        }
+
+        .chart-card {
+            background: linear-gradient(135deg, var(--card-bg) 0%, rgba(18, 21, 32, 0.95) 100%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 2.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at top right, rgba(65,105,225,0.05) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .chart-card:hover {
+            border-color: rgba(65,105,225,0.3);
+            box-shadow: 0 12px 48px rgba(0,0,0,0.4);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .chart-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            letter-spacing: -0.3px;
+        }
+
+        .chart-title i {
+            color: var(--primary-blue);
+            font-size: 1.1rem;
+        }
+
+        .stat-item {
+            background: linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+            padding: 1.25rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-left: 3px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: linear-gradient(180deg, var(--primary-blue), var(--accent-color));
+            transform: scaleY(0);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-item:hover {
+            background: linear-gradient(90deg, rgba(65,105,225,0.15) 0%, rgba(108,92,231,0.1) 100%);
+            transform: translateX(8px);
+            box-shadow: 0 4px 12px rgba(65,105,225,0.2);
+        }
+
+        .stat-item:hover::before {
+            transform: scaleY(1);
+        }
+
+        .stat-name {
+            color: rgba(255,255,255,0.8);
+            font-size: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-value {
+            color: white;
+            font-weight: 700;
+            font-size: 1.25rem;
+            padding: 0.35rem 1rem;
+            background: rgba(65,105,225,0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(65,105,225,0.3);
+        }
+
+        .badge-custom {
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .badge-primary-custom {
+            background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
+        }
+
+        .badge-success-custom {
+            background: linear-gradient(135deg, var(--success-color), #20bf6b);
+        }
+
+        .section-header {
+            margin: 4rem 0 2.5rem 0;
+            position: relative;
+            padding-bottom: 1rem;
+        }
+
+        .section-header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 80px;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-blue), var(--accent-color));
+            border-radius: 2px;
+        }
+
+        .section-title {
+            font-size: 2.25rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.75rem;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .section-subtitle {
+            color: rgba(255,255,255,0.6);
+            font-size: 1.05rem;
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+
+        .system-metric {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.25rem;
+            background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.05);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .system-metric::after {
+            content: '';
+            position: absolute;
+            right: -50px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle, rgba(65,105,225,0.1) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .system-metric:hover {
+            background: linear-gradient(135deg, rgba(65,105,225,0.15) 0%, rgba(108,92,231,0.1) 100%);
+            border-color: rgba(65,105,225,0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(65,105,225,0.2);
+        }
+
+        .system-metric-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--info-color), #45aaf2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.25rem;
+            box-shadow: 0 4px 12px rgba(52,152,219,0.3);
+            position: relative;
+            z-index: 1;
+        }
+
+        .system-metric-info {
+            flex: 1;
+        }
+
+        .system-metric-label {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .system-metric-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .progress {
+            height: 10px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .progress-bar {
+            border-radius: 8px;
+            background: linear-gradient(90deg, var(--primary-blue), var(--accent-color));
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(65,105,225,0.4);
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .text-muted {
+            color: rgba(255,255,255,0.6) !important;
+        }
+
+        .section-bg-accent {
+            position: absolute;
+            width: 30vw;
+            height: 30vw;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary-blue), var(--accent-color));
+            filter: blur(120px);
+            opacity: 0.05;
+            z-index: -1;
+        }
+
+        .section-bg-accent.left {
+            left: -15vw;
+            top: 20%;
+        }
+
+        .section-bg-accent.right {
+            right: -15vw;
+            bottom: 20%;
+        }
+
+        .language-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 100%);
+            border-radius: 10px;
+            margin: 0.35rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .language-badge:hover {
+            background: linear-gradient(135deg, rgba(65,105,225,0.2) 0%, rgba(108,92,231,0.15) 100%);
+            border-color: rgba(65,105,225,0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(65,105,225,0.2);
+        }
+
+        .language-badge-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        @media (max-width: 768px) {
+            .kpi-value {
+                font-size: 2rem;
+            }
+
+            .section-title {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="section-bg-accent left"></div>
+    <div class="section-bg-accent right"></div>
+
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <i class="fas fa-shield-alt me-2 text-primary"></i>
+                <span class="fw-bold text-white">PatchLeaks</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <i class="fas fa-bars text-light"></i>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link active" href="/dashboard">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/folder">Folder Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/products">Product Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/library">Library</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/ai-settings">AI Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/reports">Reports</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-container">
+        
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center flex-wrap">
+                    <div class="mb-3 mb-md-0">
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div style="width: 60px; height: 60px; background: linear-gradient(135deg, var(--primary-blue), var(--accent-color)); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.75rem; box-shadow: 0 8px 24px rgba(65,105,225,0.4);">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <div>
+                                <h1 class="display-4 fw-bold mb-1" style="background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -1px;">Analytics Dashboard</h1>
+                                <p class="lead text-muted mb-0" style="font-size: 1.1rem;">Real-time insights into vulnerability analysis activities</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <div style="background: rgba(255,255,255,0.05); padding: 1.25rem 1.75rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
+                            <p class="text-muted mb-1" style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px;"><i class="far fa-clock me-2"></i>Last Updated</p>
+                            <p class="text-white fw-bold mb-0" style="font-size: 1.5rem; letter-spacing: -0.5px;" id="lastUpdated">{{.Stats.Timestamp.Format "15:04:05"}}</p>
+                            <p class="text-muted mb-0" style="font-size: 0.75rem; margin-top: 0.25rem;">{{.Stats.Timestamp.Format "January 2, 2006"}}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="row">
+            <div class="col-lg-3 col-md-6">
+                <div class="kpi-card">
+                    <div class="kpi-icon blue">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="kpi-value">{{.Stats.AnalysisMetrics.TotalCompleted}}</div>
+                    <div class="kpi-label">Total Analyses</div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="kpi-card">
+                    <div class="kpi-icon green">
+                        <i class="fas fa-spinner fa-pulse"></i>
+                    </div>
+                    <div class="kpi-value">{{.Stats.AnalysisMetrics.ActiveRunning}}</div>
+                    <div class="kpi-label">Active Analyses</div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="kpi-card">
+                    <div class="kpi-icon red">
+                        <i class="fas fa-bug"></i>
+                    </div>
+                    <div class="kpi-value">{{.Stats.AnalysisMetrics.TotalVulns}}</div>
+                    <div class="kpi-label">Vulnerabilities Found</div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="kpi-card">
+                    <div class="kpi-icon orange">
+                        <i class="fas fa-percentage"></i>
+                    </div>
+                    <div class="kpi-value">{{printf "%.1f" .Stats.AnalysisMetrics.DetectionRate}}%</div>
+                    <div class="kpi-label">Detection Rate</div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-shield-virus me-3"></i>Vulnerability Intelligence</h2>
+            <p class="section-subtitle">Insights into detected security vulnerabilities</p>
+        </div>
+
+        <div class="row">
+            
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title"><i class="fas fa-cubes"></i>Vulnerabilities by Product</h3>
+                    </div>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="vulnByProductChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title"><i class="fas fa-exclamation-triangle"></i>Top Vulnerability Types</h3>
+                    </div>
+                    <div class="mt-3">
+                        {{range .Stats.VulnerabilityMets.TopVulnerabilities}}
+                        <div class="stat-item">
+                            <span class="stat-name"><i class="fas fa-bug text-danger me-2"></i>{{.Type}}</span>
+                            <span class="stat-value">{{.Count}}</span>
+                        </div>
+                        {{end}}
+                        {{if not .Stats.VulnerabilityMets.TopVulnerabilities}}
+                        <p class="text-muted text-center py-4">No vulnerability data available</p>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            
+            <div class="col-lg-4">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title"><i class="fas fa-shield-alt"></i>CVE Correlation</h3>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-crosshairs"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Total Matches</div>
+                            <div class="system-metric-value">{{.Stats.CVEMetrics.TotalMatches}}</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-percent"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Match Rate</div>
+                            <div class="system-metric-value">{{printf "%.1f" .Stats.CVEMetrics.MatchRate}}%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            
+            <div class="col-lg-8">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title"><i class="fas fa-brain"></i>AI Confidence Distribution</h3>
+                    </div>
+                    <div style="position: relative; height: 200px;">
+                        <canvas id="aiConfidenceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-robot me-3"></i>AI Analysis Performance</h2>
+            <p class="section-subtitle">Performance metrics for AI-powered vulnerability detection</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title"><i class="fas fa-clock"></i>Analysis Time by Scale</h3>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-file-alt"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">10 Files Average</div>
+                            <div class="system-metric-value">
+                                {{if index .Stats.AIMetrics.AvgAnalysisTimeByScale "10_files"}}
+                                    {{index .Stats.AIMetrics.AvgAnalysisTimeByScale "10_files"}}s
+                                {{else}}
+                                    N/A
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-copy"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">100 Files Average</div>
+                            <div class="system-metric-value">
+                                {{if index .Stats.AIMetrics.AvgAnalysisTimeByScale "100_files"}}
+                                    {{index .Stats.AIMetrics.AvgAnalysisTimeByScale "100_files"}}s
+                                {{else}}
+                                    N/A
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-database"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">1000 Files Average</div>
+                            <div class="system-metric-value">
+                                {{if index .Stats.AIMetrics.AvgAnalysisTimeByScale "1000_files"}}
+                                    {{index .Stats.AIMetrics.AvgAnalysisTimeByScale "1000_files"}}s
+                                {{else}}
+                                    N/A
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">AI Thread Utilization</h3>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Active Threads</span>
+                            <span class="text-white fw-bold">{{.Stats.AIMetrics.ActiveThreads}} / {{.Stats.AIMetrics.MaxThreads}}</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar" style="width: {{if gt .Stats.AIMetrics.MaxThreads 0}}{{mul (div (float64 .Stats.AIMetrics.ActiveThreads) (float64 .Stats.AIMetrics.MaxThreads)) 100.0}}{{else}}0{{end}}%"></div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-microchip"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Configured Threads</div>
+                            <div class="system-metric-value">{{.Stats.AIMetrics.MaxThreads}}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-book me-3"></i>Repository Monitoring</h2>
+            <p class="section-subtitle">Library and dependency tracking statistics</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Monitored Libraries</h3>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-book-open"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Total Libraries</div>
+                            <div class="system-metric-value">{{.Stats.RepositoryMetrics.MonitoredLibraries}}</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-sync-alt"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Auto-Scan Enabled</div>
+                            <div class="system-metric-value">{{.Stats.RepositoryMetrics.AutoScanEnabled}}</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Version Checks</div>
+                            <div class="system-metric-value">{{.Stats.RepositoryMetrics.VersionChecks}}</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-star"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">New Versions Detected</div>
+                            <div class="system-metric-value">{{.Stats.RepositoryMetrics.NewVersionsDetected}}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Most Active Libraries</h3>
+                    </div>
+                    <div class="mt-3">
+                        {{range .Stats.RepositoryMetrics.MostActiveRepos}}
+                        <div class="stat-item">
+                            <span class="stat-name"><i class="fas fa-code-branch text-primary me-2"></i>{{.Name}}</span>
+                            <span class="stat-value">{{.Count}} analyses</span>
+                        </div>
+                        {{end}}
+                        {{if not .Stats.RepositoryMetrics.MostActiveRepos}}
+                        <p class="text-muted text-center py-4">No library analysis data available</p>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-code me-3"></i>File & Language Analytics</h2>
+            <p class="section-subtitle">Breakdown of analyzed files and programming languages</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-3">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Total Files</h3>
+                    </div>
+                    <div class="text-center py-4">
+                        <div class="kpi-value">{{.Stats.FileMetrics.TotalFilesAnalyzed}}</div>
+                        <div class="kpi-label">Files Analyzed</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-9">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Top Languages by Analysis Type</h3>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6 class="text-white mb-3"><i class="fas fa-cube me-2"></i>Products</h6>
+                            {{range .Stats.LanguageStats.Products}}
+                            <div class="language-badge">
+                                <div class="language-badge-dot" style="background: var(--primary-blue);"></div>
+                                <span>{{.Language}} ({{.FileCount}})</span>
+                            </div>
+                            {{end}}
+                            {{if not .Stats.LanguageStats.Products}}
+                            <p class="text-muted small">No data</p>
+                            {{end}}
+                        </div>
+                        <div class="col-md-4">
+                            <h6 class="text-white mb-3"><i class="fas fa-book me-2"></i>Library</h6>
+                            {{range .Stats.LanguageStats.Library}}
+                            <div class="language-badge">
+                                <div class="language-badge-dot" style="background: var(--success-color);"></div>
+                                <span>{{.Language}} ({{.FileCount}})</span>
+                            </div>
+                            {{end}}
+                            {{if not .Stats.LanguageStats.Library}}
+                            <p class="text-muted small">No data</p>
+                            {{end}}
+                        </div>
+                        <div class="col-md-4">
+                            <h6 class="text-white mb-3"><i class="fas fa-folder me-2"></i>Folder</h6>
+                            {{range .Stats.LanguageStats.Folder}}
+                            <div class="language-badge">
+                                <div class="language-badge-dot" style="background: var(--info-color);"></div>
+                                <span>{{.Language}} ({{.FileCount}})</span>
+                            </div>
+                            {{end}}
+                            {{if not .Stats.LanguageStats.Folder}}
+                            <p class="text-muted small">No data</p>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-tachometer-alt me-3"></i>Cache & Performance</h2>
+            <p class="section-subtitle">System performance and caching metrics</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Cache Statistics</h3>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-hdd"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Cache Size</div>
+                            <div class="system-metric-value">{{printf "%.2f" (div (float64 .Stats.CacheMetrics.SizeBytes) 1073741824)}} GB</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-box"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Cached Versions</div>
+                            <div class="system-metric-value">{{.Stats.CacheMetrics.CachedVersions}}</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-bullseye"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Cache Hit Rate</div>
+                            <div class="system-metric-value">{{printf "%.1f" .Stats.CacheMetrics.HitRate}}%</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-save"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Disk Space Saved</div>
+                            <div class="system-metric-value">{{printf "%.2f" (div (float64 .Stats.CacheMetrics.DiskSpaceSaved) 1073741824)}} GB</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">System Metrics</h3>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-memory"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Memory Usage</div>
+                            <div class="system-metric-value">{{.Stats.SystemMetrics.MemoryMB}} MB</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-project-diagram"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Active Goroutines</div>
+                            <div class="system-metric-value">{{.Stats.SystemMetrics.Goroutines}}</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-download"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Avg Download Time</div>
+                            <div class="system-metric-value">{{printf "%.1f" .Stats.CacheMetrics.AvgDownloadTime}}s</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-box-open me-3"></i>Product Management</h2>
+            <p class="section-subtitle">Configured products and analysis coverage</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Product Overview</h3>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-cubes"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Total Products</div>
+                            <div class="system-metric-value">{{.Stats.ProductMetrics.TotalConfigured}}</div>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <div class="system-metric-icon">
+                            <i class="fas fa-chart-area"></i>
+                        </div>
+                        <div class="system-metric-info">
+                            <div class="system-metric-label">Average Coverage</div>
+                            <div class="system-metric-value">{{printf "%.1f" .Stats.ProductMetrics.AvgCoverage}} analyses/product</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Most Analyzed Products</h3>
+                    </div>
+                    <div class="mt-3">
+                        {{range .Stats.ProductMetrics.MostAnalyzed}}
+                        <div class="stat-item">
+                            <span class="stat-name"><i class="fas fa-cube text-success me-2"></i>{{.Name}}</span>
+                            <span class="stat-value">{{.Count}} analyses</span>
+                        </div>
+                        {{end}}
+                        {{if not .Stats.ProductMetrics.MostAnalyzed}}
+                        <p class="text-muted text-center py-4">No product analysis data available</p>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-chart-line me-3"></i>Historical Trends</h2>
+            <p class="section-subtitle">Analysis activity and vulnerability trends over time</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3 class="chart-title">Library Vulnerability Trends (Monthly)</h3>
+                    </div>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="vulnTrendsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script>
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            
+            Chart.defaults.color = 'rgba(255, 255, 255, 0.7)';
+            Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+            Chart.defaults.font.family = "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+            
+            const vulnByProductDataRaw = {{json .Stats.VulnerabilityMets.ByProduct}};
+            const vulnByProductData = typeof vulnByProductDataRaw === 'string' ? JSON.parse(vulnByProductDataRaw) : vulnByProductDataRaw;
+            console.log('Vuln by product data:', vulnByProductData);
+            console.log('Data keys:', Object.keys(vulnByProductData));
+            console.log('Keys length:', Object.keys(vulnByProductData).length);
+            
+            if (vulnByProductData && Object.keys(vulnByProductData).length > 0) {
+                const products = Object.keys(vulnByProductData).slice(0, 10);
+                const counts = products.map(p => vulnByProductData[p]);
+                
+                console.log('Creating chart with products:', products, 'and counts:', counts);
+                
+                new Chart(document.getElementById('vulnByProductChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: products,
+                        datasets: [{
+                            label: 'Vulnerabilities',
+                            data: counts,
+                            backgroundColor: 'rgba(65, 105, 225, 0.8)',
+                            borderColor: 'rgba(65, 105, 225, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        }
+                    }
+                });
+            } else {
+                console.log('No data for vuln by product chart or empty object');
+            }
+
+        
+        const confidenceLevels = {
+            labels: ['Confirmed', 'Uncertain', 'Clear Negative'],
+            data: [
+                {{.Stats.AIMetrics.ConfidenceLevels.Confirmed}},
+                {{.Stats.AIMetrics.ConfidenceLevels.Uncertain}},
+                {{.Stats.AIMetrics.ConfidenceLevels.ClearNegative}}
+            ]
+        };
+
+        new Chart(document.getElementById('aiConfidenceChart'), {
+            type: 'doughnut',
+            data: {
+                labels: confidenceLevels.labels,
+                datasets: [{
+                    data: confidenceLevels.data,
+                    backgroundColor: [
+                        'rgba(0, 184, 148, 0.8)',
+                        'rgba(243, 156, 18, 0.8)',
+                        'rgba(52, 152, 219, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(0, 184, 148, 1)',
+                        'rgba(243, 156, 18, 1)',
+                        'rgba(52, 152, 219, 1)'
+                    ],
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true
+                        }
+                    }
+                }
+            }
+        });
+
+        
+        const vulnTrendsRaw = {{json .Stats.TrendMetrics.HistoricalVulnTrends}};
+        const vulnTrends = typeof vulnTrendsRaw === 'string' ? JSON.parse(vulnTrendsRaw) : vulnTrendsRaw;
+        if (vulnTrends && vulnTrends.length > 0) {
+            const months = vulnTrends.map(t => t.month);
+            const vulnCounts = vulnTrends.map(t => t.count);
+
+            new Chart(document.getElementById('vulnTrendsChart'), {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [{
+                        label: 'Vulnerabilities Found',
+                        data: vulnCounts,
+                        borderColor: 'rgba(231, 76, 60, 1)',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        
+        setInterval(() => {
+            location.reload();
+        }, 30000);
+
+        
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('lastUpdated').textContent = now.toLocaleTimeString();
+        }, 1000);
+        }); 
+    </script>
+</body>
+</html>
