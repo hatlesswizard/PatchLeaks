@@ -682,6 +682,7 @@ pre {
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="/folder">Folder Analysis</a></li>
                     <li class="nav-item"><a class="nav-link active" href="/products">Product Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/library">Library</a></li>
@@ -702,7 +703,7 @@ pre {
                 <p class="lead text-muted">Compare security patches between product versions</p>
             </div>
         </div>
-        <!-- Flash Messages -->
+        
         {{if .FlashMessages}}
                 <div class="container mb-4">
                     {{range .FlashMessages}}
@@ -755,7 +756,7 @@ pre {
                                     <i class="fas fa-code-branch text-primary"></i>
                                 </span>
                                 <select class="form-select" name="old_version" id="oldVersion">
-                                    <!-- Versions populated by JavaScript -->
+                                    
                                 </select>
                             </div>
                         </div>
@@ -767,7 +768,7 @@ pre {
                                     <i class="fas fa-code-branch text-primary"></i>
                                 </span>
                                 <select class="form-select" name="new_version" id="newVersion">
-                                    <!-- Versions populated by JavaScript -->
+                                    
                                 </select>
                             </div>
                         </div>
@@ -822,13 +823,13 @@ pre {
                     </div>
                 </div>
 
-<!-- Include jQuery and Bootstrap JS -->
+
     <script src="/static/js/jquery.min.js"></script>
 <script src="/static/js/bootstrap.bundle.min.js"></script>
 
     <script>
     $(document).ready(function() {
-        // Initialize version dropdowns if product is already selected
+        
         const selectedProduct = $('#productSelect').val();
         if(selectedProduct) {
             $('.version-group').show();
@@ -900,7 +901,7 @@ pre {
                 });
         }
 
-        // Only add event listeners if the elements exist (when there are results)
+        
         const filterBtns = document.querySelectorAll('.filter-btn');
         const aiSearchInput = document.getElementById('aiSearch');
         
