@@ -48,7 +48,9 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 		log.Printf("Failed to unmarshal analysis: %v", err)
 		return
 	}
+	now := time.Now()
 	analysis.Meta.Status = "completed"
+	analysis.Meta.FinishedAt = &now
 	analysis.Results = analyzedResults
 	analysis.Meta.Params = params
 	if params["enable_ai"] == "on" && config != nil {
@@ -167,9 +169,12 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	cachePath := filepath.Join(cacheDir, cacheKey)
 	if _, err := os.Stat(cachePath); err == nil {
 		log.Printf("Using cached version: %s (%s)", version, cachePath)
+		TrackCacheHit()
 		return cachePath, nil
 	}
 	log.Printf("Downloading and caching %s from %s", version, repoURL)
+	TrackCacheMiss()
+	downloadStartTime := time.Now()
 	downloadURL := fmt.Sprintf("%s/archive/refs/tags/%s.zip", repoURL, version)
 	resp, err := http.Get(downloadURL)
 	if err != nil {
@@ -217,7 +222,9 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to cache version: %v", err)
 	}
-	log.Printf("Cached version %s to %s", version, cachePath)
+	downloadDuration := time.Since(downloadStartTime)
+	TrackDownloadTime(downloadDuration)
+	log.Printf("Cached version %s to %s (took %v)", version, cachePath, downloadDuration)
 	return cachePath, nil
 }
 
@@ -807,6 +814,8 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
+			IncrementActiveAIThreads()
+			defer DecrementActiveAIThreads()
 			for item := range workChan {
 				diffContent := strings.Join(item.result.Context, "\n")
 				enhancedDiff := diffContent
