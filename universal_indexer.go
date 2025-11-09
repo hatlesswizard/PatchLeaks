@@ -58,22 +58,22 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 	startTime := time.Now()
 	language := DetectLanguage(filePath)
 	if language == "unknown" {
-		log.Printf("Unknown language for file: %s, skipping context extraction", filePath)
+		log.Printf("[CONTEXT] Unknown language for file: %s, skipping context extraction", filePath)
 		return "", nil
 	}
 	functionCalls := extractFunctionCallsWithTreeSitter(filePath, diffContent, language)
 	if len(functionCalls) == 0 {
-		log.Printf("No function calls found in diff for %s", filePath)
+		log.Printf("[CONTEXT] No function calls found in diff for %s", filePath)
 		return "", nil
 	}
-	log.Printf("Found %d function calls in %s", len(functionCalls), filepath.Base(filePath))
-	var funcIndex *FunctionIndex
+	log.Printf("[CONTEXT] Found %d function calls in %s (repo: %s)", len(functionCalls), filepath.Base(filePath), filepath.Base(repoPath))
+	
+	var lazyIndex *LazyFunctionIndex
 	if repoPath != "" {
-		var err error
-		funcIndex, err = GetOrBuildFunctionIndex(repoPath)
-		if err != nil {
-			log.Printf("Warning: Could not get function index for %s: %v", repoPath, err)
-		}
+		indexStart := time.Now()
+		lazyIndex = NewLazyFunctionIndex(repoPath)
+		indexDuration := time.Since(indexStart)
+		log.Printf("[CONTEXT] Created lazy index for %s in %v", filepath.Base(repoPath), indexDuration)
 	}
 	builtinDetector := GetBuiltinDetector()
 	type lookupTask struct {
@@ -83,14 +83,16 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 	var tasks []lookupTask
 	for i, funcName := range functionCalls {
 		if builtinDetector.IsBuiltin(language, funcName) {
-			log.Printf("Function %s.%s is a built-in, skipping context extraction", language, funcName)
+			log.Printf("[CONTEXT] Function %s.%s is a built-in, skipping context extraction", language, funcName)
 			continue
 		}
 		tasks = append(tasks, lookupTask{funcName: funcName, index: i})
 	}
 	if len(tasks) == 0 {
+		log.Printf("[CONTEXT] All %d functions were built-ins, no lookups needed", len(functionCalls))
 		return "", nil
 	}
+	log.Printf("[CONTEXT] Need to lookup %d non-builtin functions", len(tasks))
 	type lookupResult struct {
 		def   *FunctionDefinition
 		err   error
@@ -102,7 +104,7 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 		wg.Add(1)
 		go func(t lookupTask) {
 			defer wg.Done()
-			def, err := lookupFunctionDefinition(language, t.funcName, filePath, repoPath, funcIndex)
+			def, err := lookupFunctionDefinitionLazy(language, t.funcName, filePath, repoPath, lazyIndex)
 			resultChan <- lookupResult{def: def, err: err, index: t.index}
 		}(task)
 	}
@@ -132,7 +134,8 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 	}
 	context := formatFunctionContext(definitions)
 	duration := time.Since(startTime)
-	log.Printf("Extracted context for %s: %d functions in %v", filepath.Base(filePath), len(definitions), duration)
+	log.Printf("[CONTEXT] Extracted context for %s: %d/%d functions found in %v", 
+		filepath.Base(filePath), len(definitions), len(tasks), duration)
 	return context, nil
 }
 
@@ -313,132 +316,15 @@ func extractFunctionCallsFromDiff(diffContent, language string) []string {
 	return calls
 }
 
-func lookupFunctionDefinition(language, funcName, filePath, repoPath string, funcIndex *FunctionIndex) (*FunctionDefinition, error) {
-	var sig, body string
-	var err error
-	var found bool
-	switch language {
-	case "c":
-		sig, body, err = TSFindCFunction(filePath, funcName)
-	case "cpp":
-		sig, body, err = TSFindCppMethod(filePath, funcName)
-		if err != nil {
-			sig, body, err = TSFindCppFunction(filePath, funcName)
-		}
-	case "csharp":
-		sig, body, err = TSFindCSharpMethod(filePath, funcName)
-	case "go":
-		sig, body, err = TSFindGoFunction(filePath, funcName)
-	case "java":
-		sig, body, err = TSFindJavaMethod(filePath, funcName)
-	case "javascript":
-		sig, body, err = TSFindJSFunction(filePath, funcName)
-	case "python":
-		sig, body, err = TSFindPythonFunction(filePath, funcName)
-	case "ruby":
-		sig, body, err = TSFindRubyMethod(filePath, funcName)
-	case "rust":
-		sig, body, err = TSFindRustFunction(filePath, funcName)
-	case "typescript":
-		sig, body, err = TSFindTSFunction(filePath, funcName)
-	case "php":
-		sig, body, err = TSFindPHPMethod(filePath, funcName)
-		if err != nil {
-			sig, body, err = TSFindPHPFunction(filePath, funcName)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported language: %s", language)
-	}
-	if err == nil && sig != "" {
-		return &FunctionDefinition{
-			Name:      funcName,
-			Language:  language,
-			File:      filePath,
-			Signature: sig,
-			Body:      body,
-		}, nil
-	}
-	if funcIndex != nil {
-		candidatePaths := funcIndex.FindFunction(language, funcName)
-		if len(candidatePaths) > 0 {
-			for _, candidatePath := range candidatePaths {
-				var candidateErr error
-				switch language {
-				case "c":
-					sig, body, candidateErr = TSFindCFunction(candidatePath, funcName)
-				case "cpp":
-					sig, body, candidateErr = TSFindCppMethod(candidatePath, funcName)
-					if candidateErr != nil {
-						sig, body, candidateErr = TSFindCppFunction(candidatePath, funcName)
-					}
-				case "csharp":
-					sig, body, candidateErr = TSFindCSharpMethod(candidatePath, funcName)
-				case "go":
-					sig, body, candidateErr = TSFindGoFunction(candidatePath, funcName)
-				case "java":
-					sig, body, candidateErr = TSFindJavaMethod(candidatePath, funcName)
-				case "javascript":
-					sig, body, candidateErr = TSFindJSFunction(candidatePath, funcName)
-				case "python":
-					sig, body, candidateErr = TSFindPythonFunction(candidatePath, funcName)
-				case "ruby":
-					sig, body, candidateErr = TSFindRubyMethod(candidatePath, funcName)
-				case "rust":
-					sig, body, candidateErr = TSFindRustFunction(candidatePath, funcName)
-				case "typescript":
-					sig, body, candidateErr = TSFindTSFunction(candidatePath, funcName)
-				case "php":
-					sig, body, candidateErr = TSFindPHPMethod(candidatePath, funcName)
-					if candidateErr != nil {
-						sig, body, candidateErr = TSFindPHPFunction(candidatePath, funcName)
-					}
-				}
-				if candidateErr == nil && sig != "" {
-					return &FunctionDefinition{
-						Name:      funcName,
-						Language:  language,
-						File:      candidatePath,
-						Signature: sig,
-						Body:      body,
-					}, nil
-				}
-			}
+
+func lookupFunctionDefinitionLazy(language, funcName, currentFile, repoPath string, lazyIndex *LazyFunctionIndex) (*FunctionDefinition, error) {
+	if lazyIndex != nil {
+		def, err := lazyIndex.FindFunction(language, funcName)
+		if err == nil && def != nil {
+			return def, nil
 		}
 	}
-	if repoPath != "" {
-		switch language {
-		case "c":
-			sig, body, found = scanCDefinitionInRepo(repoPath, funcName)
-		case "cpp":
-			sig, body, found = scanCppDefinitionInRepo(repoPath, funcName)
-		case "csharp":
-			sig, body, found = scanCSharpDefinitionInRepo(repoPath, funcName)
-		case "go":
-			sig, body, found = scanGoDefinitionInRepo(repoPath, funcName)
-		case "java":
-			sig, body, found = scanJavaDefinitionInRepo(repoPath, funcName)
-		case "javascript":
-			sig, body, found = scanJSDefinitionInRepo(repoPath, funcName)
-		case "ruby":
-			sig, body, found = scanRubyDefinitionInRepo(repoPath, funcName)
-		case "rust":
-			sig, body, found = scanRustDefinitionInRepo(repoPath, funcName)
-		case "typescript":
-			sig, body, found = scanTSDefinitionInRepo(repoPath, funcName)
-		case "php":
-			sig, body, found = scanPHPDefinitionInRepo(repoPath, funcName)
-		}
-		if found {
-			return &FunctionDefinition{
-				Name:      funcName,
-				Language:  language,
-				File:      repoPath,
-				Signature: sig,
-				Body:      body,
-			}, nil
-		}
-	}
-	return nil, fmt.Errorf("function %s not found in repository", funcName)
+	return nil, fmt.Errorf("function %s not found", funcName)
 }
 
 func formatFunctionContext(definitions []FunctionDefinition) string {
