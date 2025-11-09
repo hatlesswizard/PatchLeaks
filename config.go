@@ -108,9 +108,11 @@ func DefaultConfig() *Config {
 			"base_url": "https://api.anthropic.com/v1",
 		},
 		Parameters: map[string]interface{}{
-			"temperature":            1.0,
-			"num_ctx":                8192,
+			"temperature":             1.0,
+			"num_ctx":                 8192,
 			"enable_context_analysis": true,
+			"log_ai_io":               true,
+			"ai_log_max_chars":        0,
 		},
 		Prompts: DefaultPrompts(),
 	}
