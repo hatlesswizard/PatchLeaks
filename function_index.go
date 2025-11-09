@@ -30,7 +30,7 @@ func GetOrBuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 	indexCacheMu.RLock()
 	if cached, exists := functionIndexCache[repoPath]; exists {
 		indexCacheMu.RUnlock()
-		log.Printf("Using cached function index for: %s", repoPath)
+		log.Printf("[INDEX CACHE HIT] Using cached function index for: %s", repoPath)
 		return cached, nil
 	}
 	indexCacheMu.RUnlock()
@@ -51,7 +51,7 @@ func GetOrBuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 			functionIndexCache[repoPath] = index
 			indexCacheMu.Unlock()
 			duration := time.Since(startTime)
-			log.Printf("Function index built and cached for %s in %v", repoPath, duration)
+			log.Printf("[INDEX CACHE STORE] Function index built and cached for %s in %v", repoPath, duration)
 		}
 	})
 	if index == nil && buildErr == nil {
@@ -70,7 +70,7 @@ func NewFunctionIndex() *FunctionIndex {
 
 func BuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 	fi := NewFunctionIndex()
-	log.Printf("Building function index for repository: %s", repoPath)
+	log.Printf("[INDEX] Building function index for repository: %s", repoPath)
 	startTime := time.Now()
 	var filePaths []string
 	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
@@ -96,7 +96,7 @@ func BuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error walking repository: %v", err)
 	}
-	log.Printf("Found %d source files to index", len(filePaths))
+	log.Printf("[INDEX] Found %d source files to index", len(filePaths))
 	numWorkers := runtime.NumCPU()
 	if numWorkers < 1 {
 		numWorkers = 1
@@ -104,7 +104,7 @@ func BuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 	if numWorkers > 16 {
 		numWorkers = 16
 	}
-	log.Printf("Processing files with %d workers", numWorkers)
+	log.Printf("[INDEX] Processing files with %d workers", numWorkers)
 	fileChan := make(chan string, len(filePaths))
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
@@ -152,8 +152,11 @@ func BuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 	}
 	fi.mu.RUnlock()
 	duration := time.Since(startTime)
-	log.Printf("Function index built: %d total functions across all languages in %v (%.2f files/sec)",
+	log.Printf("[INDEX] Function index built: %d total functions across all languages in %v (%.2f files/sec)",
 		totalFuncs, duration, float64(len(filePaths))/duration.Seconds())
+	log.Printf("[INDEX] Performance: %.2f ms per file, %.2f functions per second",
+		float64(duration.Milliseconds())/float64(len(filePaths)),
+		float64(totalFuncs)/duration.Seconds())
 	return fi, nil
 }
 
