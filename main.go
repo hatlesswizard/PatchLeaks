@@ -99,6 +99,8 @@ func setupRouter() *mux.Router {
 	protected.HandleFunc("/ai-settings", aiSettingsHandler).Methods("GET", "POST")
 	protected.HandleFunc("/reset-prompts", resetPromptsHandler).Methods("POST")
 	r.HandleFunc("/reports", reportsHandler).Methods("GET")
+	r.HandleFunc("/dashboard", dashboardHandler).Methods("GET")
+	r.HandleFunc("/api/dashboard/stats", dashboardAPIHandler).Methods("GET")
 	return r
 }
 
