@@ -19,14 +19,15 @@ type Analysis struct {
 }
 
 type AnalysisMeta struct {
-	CreatedAt time.Time              `json:"created_at"`
-	Source    string                 `json:"source"`
-	AIEnabled bool                   `json:"ai_enabled"`
-	AIService string                 `json:"ai_service,omitempty"`
-	AIModel   string                 `json:"ai_model,omitempty"`
-	Status    string                 `json:"status"`
-	Error     string                 `json:"error,omitempty"`
-	Params    map[string]interface{} `json:"params,omitempty"`
+	CreatedAt  time.Time              `json:"created_at"`
+	FinishedAt *time.Time             `json:"finished_at,omitempty"`
+	Source     string                 `json:"source"`
+	AIEnabled  bool                   `json:"ai_enabled"`
+	AIService  string                 `json:"ai_service,omitempty"`
+	AIModel    string                 `json:"ai_model,omitempty"`
+	Status     string                 `json:"status"`
+	Error      string                 `json:"error,omitempty"`
+	Params     map[string]interface{} `json:"params,omitempty"`
 }
 
 type AnalysisResult struct {
