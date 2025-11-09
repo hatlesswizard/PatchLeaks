@@ -130,7 +130,7 @@ func (client *AIServiceClient) aiIOLogMaxChars() int {
 			}
 		}
 	}
-	return 100000
+	return 0 
 }
 
 func (client *AIServiceClient) aiIOLogFile() string {
@@ -142,20 +142,54 @@ func (client *AIServiceClient) aiIOLogFile() string {
 
 func (client *AIServiceClient) aiIOLog(kind string, content string, attempt int) {
 	max := client.aiIOLogMaxChars()
-	if len(content) > max {
-		content = content[:max] + "\n... [truncated]"
+	originalLength := len(content)
+	truncated := false
+	
+	if max > 0 && len(content) > max {
+		content = content[:max]
+		truncated = true
 	}
+	
 	path := client.aiIOLogFile()
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	timestamp := time.Now().Format(time.RFC3339)
-	header := fmt.Sprintf("[%s] service=%s attempt=%d kind=%s\n", timestamp, client.service, attempt+1, kind)
-	entry := header + content + "\n\n"
+	
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	
+	
+	var entry strings.Builder
+	entry.WriteString("=" + strings.Repeat("=", 78) + "=\n")
+	entry.WriteString(fmt.Sprintf("TIMESTAMP: %s\n", timestamp))
+	entry.WriteString(fmt.Sprintf("SERVICE:   %s\n", client.service))
+	entry.WriteString(fmt.Sprintf("ATTEMPT:   %d\n", attempt+1))
+	entry.WriteString(fmt.Sprintf("TYPE:      %s\n", kind))
+	entry.WriteString(fmt.Sprintf("LENGTH:    %d characters", originalLength))
+	
+	if truncated {
+		entry.WriteString(fmt.Sprintf(" (truncated to %d)\n", max))
+	} else {
+		entry.WriteString("\n")
+	}
+	
+	entry.WriteString("=" + strings.Repeat("=", 78) + "=\n\n")
+	entry.WriteString(content)
+	entry.WriteString("\n\n")
+	
+	if truncated {
+		entry.WriteString(fmt.Sprintf("\n[... TRUNCATED - Original length: %d characters ...]\n\n", originalLength))
+	}
+	
+	entry.WriteString(strings.Repeat("-", 80) + "\n\n")
+	
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
+		log.Printf("Warning: Failed to write to AI log file: %v", err)
 		return
 	}
 	defer f.Close()
-	f.WriteString(entry)
+	
+	if _, err := f.WriteString(entry.String()); err != nil {
+		log.Printf("Warning: Failed to write to AI log: %v", err)
+	}
 }
 
 func (client *AIServiceClient) doHTTPRequest(url string, headers map[string]string, body []byte) ([]byte, error) {
@@ -358,9 +392,38 @@ func GetAIAnalysis(filePath, diffContent string) string {
 		log.Printf("⚠ Function context NOT found in diffContent - this may be expected if no context was extracted")
 	}
 	client := NewAIServiceClient(config)
+	
+	
+	if client.aiIOLogEnabled() {
+		metadata := fmt.Sprintf("ANALYSIS METADATA\n"+
+			"File Path: %s\n"+
+			"Timestamp: %s\n"+
+			"Prompt Template: main_analysis\n"+
+			"Diff Length: %d chars\n"+
+			"Function Context: %v\n",
+			filePath,
+			time.Now().Format("2006-01-02 15:04:05"),
+			len(diffContent),
+			strings.Contains(diffContent, "=== Function Context ==="))
+		client.aiIOLog("METADATA", metadata, 0)
+	}
+	
 	response := client.GenerateResponse(prompt)
 	duration := time.Since(startTime)
 	log.Printf("GetAIAnalysis completed in %v", duration)
+	
+	
+	if client.aiIOLogEnabled() {
+		completionMeta := fmt.Sprintf("ANALYSIS COMPLETION\n"+
+			"File Path: %s\n"+
+			"Duration: %v\n"+
+			"Response Length: %d chars\n",
+			filePath,
+			duration,
+			len(response))
+		client.aiIOLog("COMPLETION", completionMeta, 0)
+	}
+	
 	return response
 }
 
@@ -422,7 +485,22 @@ func AnalyzeWithCVE(aiResponse, cveDescription string) string {
 	}
 	prompt := strings.ReplaceAll(config.Prompts["cve_analysis"], "{ai_response}", aiResponse)
 	prompt = strings.ReplaceAll(prompt, "{cve_description}", cveDescription)
+	
 	client := NewAIServiceClient(config)
+	
+	
+	if client.aiIOLogEnabled() {
+		metadata := fmt.Sprintf("CVE ANALYSIS METADATA\n"+
+			"Timestamp: %s\n"+
+			"Prompt Template: cve_analysis\n"+
+			"AI Response Length: %d chars\n"+
+			"CVE Description Length: %d chars\n",
+			time.Now().Format("2006-01-02 15:04:05"),
+			len(aiResponse),
+			len(cveDescription))
+		client.aiIOLog("CVE_METADATA", metadata, 0)
+	}
+	
 	return client.GenerateResponse(prompt)
 }
 
@@ -438,9 +516,30 @@ func GenerateCVEWriteup(cveID, cveDescription string, matchingFilesAnalysis []st
 	prompt = strings.ReplaceAll(prompt, "{cve_id}", cveID)
 	prompt = strings.ReplaceAll(prompt, "{cve_description}", cveDescription)
 	prompt = strings.ReplaceAll(prompt, "{all_matching_files_analysis}", allAnalysis)
+	
 	log.Printf("Generating writeup for %s", cveID)
+	
 	client := NewAIServiceClient(config)
+	
+	
+	if client.aiIOLogEnabled() {
+		metadata := fmt.Sprintf("CVE WRITEUP METADATA\n"+
+			"CVE ID: %s\n"+
+			"Timestamp: %s\n"+
+			"Prompt Template: cve_writeup\n"+
+			"Number of Files: %d\n"+
+			"Total Analysis Length: %d chars\n"+
+			"CVE Description Length: %d chars\n",
+			cveID,
+			time.Now().Format("2006-01-02 15:04:05"),
+			len(matchingFilesAnalysis),
+			len(allAnalysis),
+			len(cveDescription))
+		client.aiIOLog("CVE_WRITEUP_METADATA", metadata, 0)
+	}
+	
 	writeup := client.GenerateResponse(prompt)
 	log.Printf("Generated writeup for %s (%d chars)", cveID, len(writeup))
+	
 	return writeup
 }
