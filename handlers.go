@@ -57,6 +57,38 @@ func init() {
 		"ge": func(a, b int) bool {
 			return a >= b
 		},
+		"mul": func(a, b float64) float64 {
+			return a * b
+		},
+		"div": func(a, b float64) float64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"float64": func(v interface{}) float64 {
+			switch val := v.(type) {
+			case int:
+				return float64(val)
+			case int32:
+				return float64(val)
+			case int64:
+				return float64(val)
+			case float64:
+				return val
+			case float32:
+				return float64(val)
+			default:
+				return 0
+			}
+		},
+		"json": func(v interface{}) string {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return "{}"
+			}
+			return string(b)
+		},
 	}
 	log.Println("========================================")
 	log.Println("Parsing templates...")
@@ -71,6 +103,7 @@ func init() {
 		"templates/products.html",
 		"templates/folder.html",
 		"templates/analysis.html",
+		"templates/dashboard.html",
 	}
 	var parseErrors []string
 	for _, tmplFile := range templateFiles {
@@ -635,6 +668,48 @@ func toggleLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 func checkVersionsNowHandler(w http.ResponseWriter, r *http.Request) {
 	go checkForNewVersions()
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
+}
+
+func dashboardHandler(w http.ResponseWriter, r *http.Request) {
+	if !templatesLoaded() {
+		http.Error(w, "Templates not loaded", http.StatusInternalServerError)
+		return
+	}
+
+	stats, err := GetDashboardStats()
+	if err != nil {
+		log.Printf("Error getting dashboard stats: %v", err)
+		http.Error(w, "Error loading dashboard", http.StatusInternalServerError)
+		return
+	}
+
+	data := struct {
+		Stats         DashboardStats
+		FlashMessages []FlashMessage
+	}{
+		Stats:         *stats,
+		FlashMessages: []FlashMessage{},
+	}
+
+	if err := templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
+		
+		if err.Error() != "write tcp" && !strings.Contains(err.Error(), "broken pipe") {
+			log.Printf("Error rendering dashboard.html: %v", err)
+		}
+		
+		return
+	}
+}
+
+func dashboardAPIHandler(w http.ResponseWriter, r *http.Request) {
+	stats, err := GetDashboardStats()
+	if err != nil {
+		log.Printf("Error getting dashboard stats: %v", err)
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load stats"})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, stats)
 }
 
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
