@@ -667,6 +667,7 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link active" href="/folder">Folder Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/products">Product Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/library">Library</a></li>
@@ -688,7 +689,7 @@
             </div>
         </div>
 
-        <!-- Flash Messages -->
+        
         {{if .FlashMessages}}
                 <div class="container mb-4">
                     {{range .FlashMessages}}
@@ -775,7 +776,7 @@
 
 >
     document.addEventListener('DOMContentLoaded', () => {
-        // Only add event listeners if the elements exist (when there are results)
+        
         const filterBtns = document.querySelectorAll('.filter-btn');
         const aiSearchInput = document.getElementById('aiSearch');
         
