@@ -859,6 +859,7 @@ pre {
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="/folder">Folder Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/products">Product Analysis</a></li>
                     <li class="nav-item"><a class="nav-link active" href="/library">Library</a></li>
@@ -893,7 +894,7 @@ pre {
             </div>
         </div>
 
-        <!-- Flash Messages -->
+        
         {{if .FlashMessages}}
                 <div class="container mb-4">
                     {{range .FlashMessages}}
@@ -909,7 +910,7 @@ pre {
         <div class="card shadow">
             <div class="card-body p-4">
 
-                <!-- Add Repository Form -->
+                
                 <div class="card mb-4">
                         <div class="card-header">
                             <h5 class="card-title mb-0">
@@ -964,7 +965,7 @@ pre {
                         </div>
                     </div>
 
-                    <!-- Repository List -->
+                    
                     {{if .LibraryRepos}}
                         <div class="row">
                             {{range .LibraryRepos}}
