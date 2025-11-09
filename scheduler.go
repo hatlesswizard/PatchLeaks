@@ -147,7 +147,9 @@ func runLibraryAnalysisBackground(analysisID string, params map[string]interface
 		updateAnalysisStatus(analysisPath, "failed", err.Error())
 		return
 	}
+	now := time.Now()
 	analysis.Meta.Status = "completed"
+	analysis.Meta.FinishedAt = &now
 	analysis.Results = results
 	analysis.Meta.Params = params
 	if params["enable_ai"] == "on" {
