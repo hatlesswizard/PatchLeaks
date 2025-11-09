@@ -465,6 +465,7 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="/folder">Folder Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/products">Product Analysis</a></li>
                     <li class="nav-item"><a class="nav-link" href="/library">Library</a></li>
@@ -486,7 +487,7 @@
             </div>
         </div>
 
-        <!-- Flash Messages -->
+        
         {{if .FlashMessages}}
                 <div class="container mb-4">
                     {{range .FlashMessages}}
@@ -552,6 +553,16 @@
                                 <input type="number" name="num_ctx" class="form-control" value="{{index .Config.Parameters "num_ctx"}}" min="512" max="8192" required>
                             </div>
                             <small class="text-muted">Maximum tokens to consider for context</small>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="enable_context_analysis" id="enableContextAnalysis" {{if index .Config.Parameters "enable_context_analysis"}}checked{{end}}>
+                                <label class="form-check-label" for="enableContextAnalysis">
+                                    <i class="fas fa-code-branch me-2 text-primary"></i>Enable Context Analysis
+                                </label>
+                            </div>
+                            <small class="text-muted">Extract and include function definitions from codebase to provide AI with more context during analysis</small>
                         </div>
 
                         <div class="col-12 service-config" id="ollamaConfig" style="display: {{if eq .Config.Service "ollama"}}block{{else}}none{{end}};">
@@ -710,6 +721,17 @@
                                 </div>
                                 
                                 <div class="col-12">
+                                    <label class="form-label">Article/Writeup Prompt (CVE Security Analysis)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-file-alt text-primary"></i>
+                                        </span>
+                                        <textarea name="cve_writeup_prompt" class="form-control" rows="10" placeholder="Enter the article/writeup prompt...">{{index .Config.Prompts "cve_writeup"}}</textarea>
+                                    </div>
+                                    <small class="text-muted">This prompt is used for generating comprehensive security analysis articles. Variables: {cve_id}, {cve_description}, {all_matching_files_analysis}</small>
+                                </div>
+                                
+                                <div class="col-12">
                                     <div class="alert alert-info">
                                         <i class="fas fa-info-circle me-2"></i>
                                         <strong>Tip:</strong> You can modify these prompts to better suit your specific use case. Make sure to keep the variable placeholders in the correct format.
@@ -854,7 +876,7 @@
 
     function resetPrompts() {
         if (confirm('Are you sure you want to reset all prompts to their default values? This action cannot be undone.')) {
-            // Create a form and submit it to the reset endpoint
+            
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '/reset-prompts';
