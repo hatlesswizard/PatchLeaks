@@ -691,6 +691,27 @@
                             </div>
                         </div>
 
+                        <!-- NVD API Configuration -->
+                        <div class="col-12 mt-4">
+                            <h5 class="mb-3 text-primary">
+                                <i class="fas fa-database me-2"></i>NVD API Configuration
+                            </h5>
+                            <p class="text-muted">Configure your National Vulnerability Database (NVD) API key for enhanced CVE information retrieval. Get your free API key at <a href="https://nvd.nist.gov/developers/request-an-api-key" target="_blank">NVD Developers</a>.</p>
+                            
+                            <div class="row g-3">
+                                <div class="col-md-12">
+                                    <label class="form-label">NVD API Key (Optional)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-shield-alt text-primary"></i>
+                                        </span>
+                                        <input type="password" name="nvd_api_key" class="form-control" value="{{if .Config.NVD}}{{index .Config.NVD "api_key"}}{{end}}" placeholder="Enter your NVD API key">
+                                    </div>
+                                    <small class="text-muted">Using an API key increases rate limits from 5 requests per 30 seconds to 50 requests per 30 seconds</small>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="col-12 mt-4">
                             <h5 class="mb-3 text-primary">
                                 <i class="fas fa-edit me-2"></i>AI Prompts Configuration
