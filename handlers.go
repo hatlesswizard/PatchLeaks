@@ -553,7 +553,20 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		} else if numCtx > 32768 {
 			numCtx = 32768
 		}
-		config := &Config{
+		// Create new config struct (don't use := to avoid shadowing global config)
+		// Start with existing parameters to preserve settings not in the form
+		newParameters := make(map[string]interface{})
+		if config != nil && config.Parameters != nil {
+			for k, v := range config.Parameters {
+				newParameters[k] = v
+			}
+		}
+		// Update with form values
+		newParameters["temperature"] = temperature
+		newParameters["num_ctx"] = numCtx
+		newParameters["enable_context_analysis"] = r.FormValue("enable_context_analysis") == "on"
+		
+		newConfig := &Config{
 			Service: aiService,
 			Ollama: map[string]interface{}{
 				"url":   validateInput(r.FormValue("ollama_url"), 200),
@@ -577,26 +590,23 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			NVD: map[string]interface{}{
 				"api_key": validateInput(r.FormValue("nvd_api_key"), 200),
 			},
-			Parameters: map[string]interface{}{
-				"temperature":            temperature,
-				"num_ctx":                numCtx,
-				"enable_context_analysis": r.FormValue("enable_context_analysis") == "on",
-			},
+			Parameters: newParameters,
 			Prompts: map[string]string{
 				"main_analysis": validatePrompt(r.FormValue("main_analysis_prompt"), 5000),
 				"cve_analysis":  validatePrompt(r.FormValue("cve_analysis_prompt"), 5000),
 				"cve_writeup":   validatePrompt(r.FormValue("cve_writeup_prompt"), 10000),
 			},
 		}
-		if err := config.Save(); err != nil {
+		if err := newConfig.Save(); err != nil {
 			log.Printf("Error saving config: %v", err)
 		} else {
+			// Reload and update the global config variable
 			reloadedConfig, err := LoadConfig()
 			if err != nil {
 				log.Printf("Error reloading config: %v", err)
 			} else {
 				config = reloadedConfig
-				log.Printf("AI config reloaded successfully")
+				log.Printf("AI config reloaded successfully - changes are now active")
 			}
 		}
 		http.Redirect(w, r, "/ai-settings", http.StatusSeeOther)

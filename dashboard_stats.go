@@ -60,9 +60,8 @@ type AIMetrics struct {
 }
 
 type ConfidenceLevels struct {
-	Confirmed      int `json:"confirmed"`
-	Uncertain      int `json:"uncertain"`
-	ClearNegative  int `json:"clear_negative"`
+	Confirmed     int `json:"confirmed"`
+	Uncertain     int `json:"uncertain"`
 }
 
 type RepositoryMetrics struct {
@@ -518,27 +517,39 @@ func extractCWEsFromAIResponse(aiResponse string) []string {
 
 func calculateCVEMetrics(analyses []Analysis) CVEMetrics {
 	metrics := CVEMetrics{}
-	totalChecks := 0
+	analysesWithMatches := 0
+	totalAnalysesWithCVEChecks := 0
 
 	for _, analysis := range analyses {
 		if analysis.Meta.Status != "completed" {
 			continue
 		}
 
+		hasAnyCVECheck := false
+		hasAnyMatch := false
+
 		for _, result := range analysis.Results {
-			if result.CVEMatches != nil {
+			if result.CVEMatches != nil && len(result.CVEMatches) > 0 {
+				hasAnyCVECheck = true
 				for _, match := range result.CVEMatches {
-					totalChecks++
 					if match.Result == "Yes" {
 						metrics.TotalMatches++
+						hasAnyMatch = true
 					}
 				}
 			}
 		}
+
+		if hasAnyCVECheck {
+			totalAnalysesWithCVEChecks++
+			if hasAnyMatch {
+				analysesWithMatches++
+			}
+		}
 	}
 
-	if totalChecks > 0 {
-		metrics.MatchRate = (float64(metrics.TotalMatches) / float64(totalChecks)) * 100
+	if totalAnalysesWithCVEChecks > 0 {
+		metrics.MatchRate = (float64(analysesWithMatches) / float64(totalAnalysesWithCVEChecks)) * 100
 	}
 
 	return metrics
@@ -571,12 +582,12 @@ func calculateAIMetrics(analyses []Analysis) AIMetrics {
 			
 			
 			if duration > 0 {
-				
-				if fileCount <= 50 {
+				// Adjusted thresholds to match label names
+				if fileCount <= 10 {
 					timeBuckets["10_files"] = append(timeBuckets["10_files"], duration)
-				} else if fileCount <= 500 {
+				} else if fileCount <= 100 {
 					timeBuckets["100_files"] = append(timeBuckets["100_files"], duration)
-				} else {
+				} else if fileCount <= 1000 {
 					timeBuckets["1000_files"] = append(timeBuckets["1000_files"], duration)
 				}
 			}
@@ -589,8 +600,6 @@ func calculateAIMetrics(analyses []Analysis) AIMetrics {
 				confidenceStats["confirmed"]++
 			} else if strings.Contains(status, "not sure") {
 				confidenceStats["uncertain"]++
-			} else if strings.Contains(status, "no") {
-				confidenceStats["clear_negative"]++
 			}
 		}
 	}
@@ -609,7 +618,6 @@ func calculateAIMetrics(analyses []Analysis) AIMetrics {
 	metrics.ConfidenceLevels = ConfidenceLevels{
 		Confirmed:     confidenceStats["confirmed"],
 		Uncertain:     confidenceStats["uncertain"],
-		ClearNegative: confidenceStats["clear_negative"],
 	}
 
 	
