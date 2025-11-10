@@ -254,6 +254,15 @@
             font-weight: 500;
         }
 
+        .badge-library {
+            background: linear-gradient(135deg, #9b59b6, #e056fd);
+            color: white;
+            padding: 0.3rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
         .badge-product {
             background: linear-gradient(135deg, var(--success-color), #20bf6b);
             color: white;
@@ -485,6 +494,7 @@
         <div class="d-flex gap-2 flex-wrap">
             <button class="filter-btn active" data-filter="all">All Reports</button>
             <button class="filter-btn" data-filter="product">Product Analysis</button>
+            <button class="filter-btn" data-filter="library">Library Analysis</button>
             <button class="filter-btn" data-filter="folder">Folder Analysis</button>
             <button class="filter-btn" data-filter="ai">AI Enabled</button>
             <button type="button" class="btn btn-outline-info filter-btn" data-filter="cve">CVE Match</button>
@@ -495,7 +505,7 @@
 <div class="row" id="reportsContainer">
     {{range .Reports}}
     <div class="col-lg-6 mb-4" 
-         data-type="{{if (index .Meta.Params "product")}}product{{else}}folder{{end}}"
+         data-type="{{if (index .Meta.Params "product")}}product{{else if or (eq .Meta.Source "library") (eq .Meta.Source "library_auto")}}library{{else}}folder{{end}}"
          data-ai="{{if .Meta.AIEnabled}}yes{{else}}no{{end}}"
          data-cve="{{if (index .Meta.Params "cve_ids")}}yes{{else}}no{{end}}"
          data-search="{{.Meta.Params}}">
@@ -506,6 +516,10 @@
                         {{if (index .Meta.Params "product")}}
                         <span class="badge-product me-2">
                             <i class="fas fa-cube me-1"></i>Product
+                        </span>
+                        {{else if or (eq .Meta.Source "library") (eq .Meta.Source "library_auto")}}
+                        <span class="badge-library me-2">
+                            <i class="fas fa-book me-1"></i>Library
                         </span>
                         {{else}}
                         <span class="badge-folder me-2">
@@ -755,6 +769,8 @@ document.querySelectorAll('#reportsContainer > div').forEach(report => {
     let showByFilter = true;
     if (activeFilter === 'product') {
         showByFilter = type === 'product';
+    } else if (activeFilter === 'library') {
+        showByFilter = type === 'library';
     } else if (activeFilter === 'folder') {
         showByFilter = type === 'folder';
     } else if (activeFilter === 'ai') {
