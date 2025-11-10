@@ -19,6 +19,9 @@
     "key": "",
     "model": ""
   },
+  "nvd": {
+    "api_key": ""
+  },
   "parameters": {
     "enable_context_analysis": true,
     "num_ctx": 8192,
