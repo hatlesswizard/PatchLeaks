@@ -97,12 +97,13 @@ func BuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 		return nil, fmt.Errorf("error walking repository: %v", err)
 	}
 	log.Printf("[INDEX] Found %d source files to index", len(filePaths))
-	numWorkers := runtime.NumCPU()
+	
+	numWorkers := runtime.GOMAXPROCS(0) 
 	if numWorkers < 1 {
 		numWorkers = 1
 	}
-	if numWorkers > 16 {
-		numWorkers = 16
+	if numWorkers > 4 {
+		numWorkers = 4 
 	}
 	log.Printf("[INDEX] Processing files with %d workers", numWorkers)
 	fileChan := make(chan string, len(filePaths))
@@ -111,7 +112,12 @@ func BuildFunctionIndex(repoPath string) (*FunctionIndex, error) {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
+			processedCount := 0
 			for path := range fileChan {
+				
+				ThrottleYieldEvery(processedCount, 5)
+				processedCount++
+				
 				language := DetectLanguage(path)
 				if language == "unknown" {
 					continue
