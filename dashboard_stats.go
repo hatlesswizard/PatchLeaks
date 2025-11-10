@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -131,37 +133,201 @@ var (
 	dashboardCache      *DashboardStats
 	dashboardCacheMutex sync.RWMutex
 	dashboardCacheTime  time.Time
-	dashboardCacheTTL   = 5 * time.Minute
+	dashboardCacheTTL   = 30 * time.Second 
+	
+	cwePatternRegex = regexp.MustCompile(`CWE-(\d+)\s*(?::|-)\s*([^\n\[]+?)(?:\s+-\s+(?:CWE-\d+|\S+\.\S+|\S+/\S+)|\s+\[|\n|$)`)
+	
+	isRefreshing     bool
+	isRefreshingLock sync.Mutex
+	processedAnalyses      = make(map[string]time.Time) 
+	processedAnalysesMutex sync.RWMutex
 )
 
 
 func GetDashboardStats() (*DashboardStats, error) {
 	dashboardCacheMutex.RLock()
-	if dashboardCache != nil && time.Since(dashboardCacheTime) < dashboardCacheTTL {
-		defer dashboardCacheMutex.RUnlock()
-		return dashboardCache, nil
-	}
+	cacheExists := dashboardCache != nil
+	cacheAge := time.Since(dashboardCacheTime)
+	isStale := cacheAge >= dashboardCacheTTL
 	dashboardCacheMutex.RUnlock()
 
-	log.Printf("Calculating dashboard statistics...")
+	
+	if cacheExists {
+		dashboardCacheMutex.RLock()
+		cachedData := dashboardCache
+		dashboardCacheMutex.RUnlock()
+		
+		if isStale {
+			isRefreshingLock.Lock()
+			if !isRefreshing {
+				isRefreshing = true
+				isRefreshingLock.Unlock()
+				
+				log.Printf("Dashboard cache stale (%v old), refreshing in background...", cacheAge)
+				go func() {
+					defer func() {
+						isRefreshingLock.Lock()
+						isRefreshing = false
+						isRefreshingLock.Unlock()
+					}()
+					calculateAndCacheDashboardStats()
+				}()
+			} else {
+				isRefreshingLock.Unlock()
+			}
+		}
+		
+		return cachedData, nil
+	}
+	
+	log.Printf("No dashboard cache exists, calculating for first time...")
+	return calculateAndCacheDashboardStats()
+}
+
+
+func loadNewOrChangedAnalyses() ([]Analysis, bool) {
+	newAnalyses := []Analysis{}
+	hasChanges := false
+	
+	files, err := os.ReadDir("saved_analyses")
+	if err != nil {
+		return newAnalyses, false
+	}
+	
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".json") {
+			analysisID := strings.TrimSuffix(file.Name(), ".json")
+			
+			
+			filePath := filepath.Join("saved_analyses", file.Name())
+			info, err := os.Stat(filePath)
+			if err != nil {
+				continue
+			}
+			
+			processedAnalysesMutex.RLock()
+			lastModTime, exists := processedAnalyses[analysisID]
+			processedAnalysesMutex.RUnlock()
+			
+			
+			if exists && !info.ModTime().After(lastModTime) {
+				continue
+			}
+			
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				continue
+			}
+			
+			var analysis Analysis
+			if err := json.Unmarshal(data, &analysis); err != nil {
+				continue
+			}
+			analysis.ID = analysisID
+			newAnalyses = append(newAnalyses, analysis)
+			hasChanges = true
+			processedAnalysesMutex.Lock()
+			processedAnalyses[analysisID] = info.ModTime()
+			processedAnalysesMutex.Unlock()
+		}
+	}
+	
+	if hasChanges {
+		log.Printf("Found %d new/changed analyses", len(newAnalyses))
+	}
+	
+	return newAnalyses, hasChanges
+}
+
+func calculateAndCacheDashboardStats() (*DashboardStats, error) {
+	startTime := time.Now()
+	
+	
+	dashboardCacheMutex.RLock()
+	hasExistingCache := dashboardCache != nil
+	dashboardCacheMutex.RUnlock()
+	
+	if hasExistingCache {
+		
+		newAnalyses, hasChanges := loadNewOrChangedAnalyses()
+		
+		if !hasChanges {
+			
+			dashboardCacheMutex.RLock()
+			cachedData := dashboardCache
+			dashboardCacheMutex.RUnlock()
+			log.Printf("No changes detected, reusing cache")
+			return cachedData, nil
+		}
+		log.Printf("Detected %d changes, performing full recalculation", len(newAnalyses))
+	}
+	
 	stats := &DashboardStats{
 		Timestamp: time.Now(),
 	}
 
 	
 	analyses := loadAllAnalyses()
+	log.Printf("Loaded %d analyses in %v", len(analyses), time.Since(startTime))
 
 	
-	stats.AnalysisMetrics = calculateAnalysisMetrics(analyses)
-	stats.VulnerabilityMets = calculateVulnerabilityMetrics(analyses)
-	stats.CVEMetrics = calculateCVEMetrics(analyses)
-	stats.AIMetrics = calculateAIMetrics(analyses)
-	stats.RepositoryMetrics = calculateRepositoryMetrics(analyses)
-	stats.FileMetrics = calculateFileMetrics(analyses)
-	stats.CacheMetrics = calculateCacheMetrics()
-	stats.TrendMetrics = calculateTrendMetrics(analyses)
-	stats.ProductMetrics = calculateProductMetrics(analyses)
-	stats.SystemMetrics = calculateSystemMetrics()
+	var wg sync.WaitGroup
+	wg.Add(10)
+
+	go func() {
+		defer wg.Done()
+		stats.AnalysisMetrics = calculateAnalysisMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.VulnerabilityMets = calculateVulnerabilityMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.CVEMetrics = calculateCVEMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.AIMetrics = calculateAIMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.RepositoryMetrics = calculateRepositoryMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.FileMetrics = calculateFileMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.CacheMetrics = calculateCacheMetrics()
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.TrendMetrics = calculateTrendMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.ProductMetrics = calculateProductMetrics(analyses)
+	}()
+
+	go func() {
+		defer wg.Done()
+		stats.SystemMetrics = calculateSystemMetrics()
+	}()
+
+	
+	wg.Wait()
+	
+	
 	stats.LanguageStats = calculateLanguageStats(analyses)
 
 	
@@ -170,7 +336,8 @@ func GetDashboardStats() (*DashboardStats, error) {
 	dashboardCacheTime = time.Now()
 	dashboardCacheMutex.Unlock()
 
-	log.Printf("Dashboard statistics calculated successfully")
+	elapsed := time.Since(startTime)
+	log.Printf("Dashboard statistics calculated successfully in %v", elapsed)
 	return stats, nil
 }
 
@@ -187,7 +354,7 @@ func calculateAnalysisMetrics(analyses []Analysis) AnalysisMetrics {
 				vulnAnalyses++
 				totalVulns += vulnCount
 			}
-		} else if analysis.Meta.Status == "in_progress" || analysis.Meta.Status == "analyzing" {
+		} else if analysis.Meta.Status == "running" || analysis.Meta.Status == "in_progress" || analysis.Meta.Status == "analyzing" {
 			metrics.ActiveRunning++
 		}
 	}
@@ -206,35 +373,74 @@ func calculateVulnerabilityMetrics(analyses []Analysis) VulnerabilityMetrics {
 		ByProduct: make(map[string]int),
 	}
 
+	
+	var vulnTypesMutex sync.Mutex
 	vulnTypes := make(map[string]int)
+
+	
+	var wg sync.WaitGroup
+	resultsChan := make(chan struct {
+		productName string
+		vulnCount   int
+		cwes        []string
+	}, len(analyses))
+
+	
+	semaphore := make(chan struct{}, 10)
 
 	for _, analysis := range analyses {
 		if analysis.Meta.Status != "completed" {
 			continue
 		}
 
-		
-		productName := ""
-		if product, ok := analysis.Meta.Params["product"].(string); ok {
-			productName = product
-		} else if repoName, ok := analysis.Meta.Params["repo_name"].(string); ok {
-			productName = repoName
-		}
+		wg.Add(1)
+		go func(analysis Analysis) {
+			defer wg.Done()
+			semaphore <- struct{}{}        
+			defer func() { <-semaphore }() 
 
-		vulnCount := countVulnerabilities(analysis.Results)
-		if productName != "" && vulnCount > 0 {
-			metrics.ByProduct[productName] += vulnCount
-		}
+			productName := ""
+			if product, ok := analysis.Meta.Params["product"].(string); ok {
+				productName = product
+			} else if repoName, ok := analysis.Meta.Params["repo_name"].(string); ok {
+				productName = repoName
+			}
 
-		
-		for _, result := range analysis.Results {
-			if result.AIResponse != "" {
-				types := extractVulnerabilityTypes(result.AIResponse)
-				for _, vType := range types {
-					vulnTypes[vType]++
+			vulnCount := countVulnerabilities(analysis.Results)
+
+			
+			var cwes []string
+			for _, result := range analysis.Results {
+				if result.AIResponse != "" {
+					cwes = append(cwes, extractCWEsFromAIResponse(result.AIResponse)...)
 				}
 			}
+
+			resultsChan <- struct {
+				productName string
+				vulnCount   int
+				cwes        []string
+			}{productName, vulnCount, cwes}
+		}(analysis)
+	}
+
+	
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	
+	for result := range resultsChan {
+		if result.productName != "" && result.vulnCount > 0 {
+			metrics.ByProduct[result.productName] += result.vulnCount
 		}
+
+		vulnTypesMutex.Lock()
+		for _, cwe := range result.cwes {
+			vulnTypes[cwe]++
+		}
+		vulnTypesMutex.Unlock()
 	}
 
 	
@@ -256,40 +462,58 @@ func calculateVulnerabilityMetrics(analyses []Analysis) VulnerabilityMetrics {
 	return metrics
 }
 
-func extractVulnerabilityTypes(aiResponse string) []string {
-	types := []string{}
-	lowerResponse := strings.ToLower(aiResponse)
 
-	vulnKeywords := map[string]string{
-		"sql injection":           "SQL Injection",
-		"xss":                     "Cross-Site Scripting (XSS)",
-		"cross-site scripting":    "Cross-Site Scripting (XSS)",
-		"remote code execution":   "Remote Code Execution (RCE)",
-		"rce":                     "Remote Code Execution (RCE)",
-		"csrf":                    "Cross-Site Request Forgery (CSRF)",
-		"path traversal":          "Path Traversal",
-		"directory traversal":     "Path Traversal",
-		"command injection":       "Command Injection",
-		"authentication bypass":   "Authentication Bypass",
-		"authorization":           "Authorization Vulnerability",
-		"buffer overflow":         "Buffer Overflow",
-		"denial of service":       "Denial of Service (DoS)",
-		"dos":                     "Denial of Service (DoS)",
-		"information disclosure":  "Information Disclosure",
-		"insecure deserialization": "Insecure Deserialization",
-		"xxe":                     "XML External Entity (XXE)",
-		"ssrf":                    "Server-Side Request Forgery (SSRF)",
-	}
 
+
+func extractCWEsFromAIResponse(aiResponse string) []string {
+	cwes := []string{}
 	found := make(map[string]bool)
-	for keyword, vulnType := range vulnKeywords {
-		if strings.Contains(lowerResponse, keyword) && !found[vulnType] {
-			types = append(types, vulnType)
-			found[vulnType] = true
+
+	
+	matches := cwePatternRegex.FindAllStringSubmatch(aiResponse, -1)
+	
+	for _, match := range matches {
+		if len(match) >= 3 {
+			cweNumber := match[1]
+			description := strings.TrimSpace(match[2])
+			
+			
+			repeatPattern := " - CWE-" + cweNumber
+			if strings.HasSuffix(description, repeatPattern) {
+				description = strings.TrimSpace(strings.TrimSuffix(description, repeatPattern))
+			}
+			
+			
+			
+			parts := strings.Split(description, " - ")
+			if len(parts) > 1 {
+				lastPart := parts[len(parts)-1]
+				
+				if len(lastPart) < 30 && !strings.ContainsAny(lastPart, "()'/") {
+					
+					if !strings.Contains(lastPart, " ") || strings.HasPrefix(lastPart, "apps/") || strings.HasPrefix(lastPart, "packages/") {
+						
+						description = strings.TrimSpace(strings.Join(parts[:len(parts)-1], " - "))
+					}
+				}
+			}
+			
+			
+			if len(description) < 3 {
+				continue
+			}
+			
+			
+			cweEntry := "CWE-" + cweNumber + ": " + description
+			
+			if !found[cweEntry] {
+				cwes = append(cwes, cweEntry)
+				found[cweEntry] = true
+			}
 		}
 	}
 
-	return types
+	return cwes
 }
 
 func calculateCVEMetrics(analyses []Analysis) CVEMetrics {
