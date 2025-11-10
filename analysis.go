@@ -75,6 +75,10 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 	}
 	updatedData, _ := json.MarshalIndent(analysis, "", "  ")
 	os.WriteFile(analysisPath, updatedData, 0644)
+	
+	
+	InvalidateDashboardCache()
+	
 	log.Printf("Analysis %s completed successfully", analysisID)
 }
 
@@ -817,6 +821,9 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 			IncrementActiveAIThreads()
 			defer DecrementActiveAIThreads()
 			for item := range workChan {
+				
+				ThrottleYield()
+				
 				diffContent := strings.Join(item.result.Context, "\n")
 				enhancedDiff := diffContent
 				filePath := filepath.Join(newPath, item.filename)
