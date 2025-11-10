@@ -574,6 +574,9 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 				"model":    validateInput(r.FormValue("claude_model"), 100),
 				"base_url": validateInput(r.FormValue("claude_url"), 200),
 			},
+			NVD: map[string]interface{}{
+				"api_key": validateInput(r.FormValue("nvd_api_key"), 200),
+			},
 			Parameters: map[string]interface{}{
 				"temperature":            temperature,
 				"num_ctx":                numCtx,
