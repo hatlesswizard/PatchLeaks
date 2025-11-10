@@ -45,9 +45,10 @@ func checkForNewVersions() {
 		jobs <- job{idx: i, repo: repo}
 	}
 	close(jobs)
-	workerCount := runtime.NumCPU()
-	if workerCount > 8 {
-		workerCount = 8
+	
+	workerCount := runtime.GOMAXPROCS(0) 
+	if workerCount > 4 {
+		workerCount = 4 
 	}
 	var wg sync.WaitGroup
 	for w := 0; w < workerCount; w++ {
@@ -55,6 +56,9 @@ func checkForNewVersions() {
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
+				
+				ThrottleYield()
+				
 				versions := getGitHubVersionsByDate(j.repo.RepoURL)
 				if len(versions) == 0 {
 					continue
@@ -193,5 +197,9 @@ func runLibraryAnalysisBackground(analysisID string, params map[string]interface
 		log.Printf("Failed to save analysis: %v", err)
 		return
 	}
+	
+	
+	InvalidateDashboardCache()
+	
 	log.Printf("Library analysis %s completed with %d results", analysisID, len(results))
 }
