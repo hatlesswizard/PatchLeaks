@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -99,15 +100,37 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 		index int
 	}
 	resultChan := make(chan lookupResult, len(tasks))
-	var wg sync.WaitGroup
-	for _, task := range tasks {
-		wg.Add(1)
-		go func(t lookupTask) {
-			defer wg.Done()
-			def, err := lookupFunctionDefinitionLazy(language, t.funcName, filePath, repoPath, lazyIndex)
-			resultChan <- lookupResult{def: def, err: err, index: t.index}
-		}(task)
+	taskChan := make(chan lookupTask, len(tasks))
+	
+	
+	numWorkers := runtime.GOMAXPROCS(0)
+	if numWorkers > 4 {
+		numWorkers = 4
 	}
+	
+	var wg sync.WaitGroup
+	
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range taskChan {
+				// Yield to CPU throttler
+				ThrottleYield()
+				def, err := lookupFunctionDefinitionLazy(language, t.funcName, filePath, repoPath, lazyIndex)
+				resultChan <- lookupResult{def: def, err: err, index: t.index}
+			}
+		}()
+	}
+	
+	
+	go func() {
+		for _, task := range tasks {
+			taskChan <- task
+		}
+		close(taskChan)
+	}()
+	
 	go func() {
 		wg.Wait()
 		close(resultChan)
