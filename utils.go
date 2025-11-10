@@ -422,6 +422,10 @@ func createNewAnalysisRecord(params map[string]interface{}, source string, aiEna
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	data, _ := json.MarshalIndent(analysis, "", "  ")
 	os.WriteFile(analysisPath, data, 0644)
+	
+	
+	InvalidateDashboardCache()
+	
 	return analysisID
 }
 
@@ -505,6 +509,13 @@ func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 	req.Header.Set("User-Agent", "PatchLeaks/1.0")
+	if config != nil && config.NVD != nil {
+		if apiKey, ok := config.NVD["api_key"].(string); ok && apiKey != "" {
+			req.Header.Set("apiKey", apiKey)
+			log.Printf("Using NVD API key for request (enhanced rate limits)")
+		}
+	}
+	
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch CVEs: %v", err)
