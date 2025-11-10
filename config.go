@@ -15,6 +15,7 @@ type Config struct {
 	OpenAI     map[string]interface{} `json:"openai"`
 	DeepSeek   map[string]interface{} `json:"deepseek"`
 	Claude     map[string]interface{} `json:"claude"`
+	NVD        map[string]interface{} `json:"nvd"`
 	Parameters map[string]interface{} `json:"parameters"`
 	Prompts    map[string]string      `json:"prompts"`
 }
@@ -40,6 +41,9 @@ func LoadConfig() (*Config, error) {
 	}
 	if config.Claude == nil {
 		config.Claude = defaultConfig.Claude
+	}
+	if config.NVD == nil {
+		config.NVD = defaultConfig.NVD
 	}
 	if config.Parameters == nil || len(config.Parameters) == 0 {
 		config.Parameters = defaultConfig.Parameters
@@ -106,6 +110,9 @@ func DefaultConfig() *Config {
 			"key":      "",
 			"model":    "claude-3-opus-20240229",
 			"base_url": "https://api.anthropic.com/v1",
+		},
+		NVD: map[string]interface{}{
+			"api_key": "",
 		},
 		Parameters: map[string]interface{}{
 			"temperature":             1.0,
