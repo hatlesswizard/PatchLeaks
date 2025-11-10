@@ -35,6 +35,16 @@ var (
 
 func main() {
 	flag.Parse()
+	
+	
+	
+	maxCPUPercent := 150.0 
+	InitCPUThrottler(maxCPUPercent)
+	
+	
+	
+	log.Printf("CPU throttling enabled: max %.0f%% CPU usage with %d threads", maxCPUPercent, *aiThreads)
+	
 	GetBuiltinDetector()
 	if *testRealWorld {
 		initializeDirectories()
@@ -70,6 +80,17 @@ func main() {
 	router := setupRouter()
 	printBanner(basicAuthUsername, basicAuthPassword, *host, serverPort, *aiThreads)
 	go startScheduler()
+	log.Printf("Pre-calculating dashboard statistics...")
+	go func() {
+		startTime := time.Now()
+		_, err := GetDashboardStats()
+		if err != nil {
+			log.Printf("Warning: Failed to pre-calculate dashboard stats: %v", err)
+		} else {
+			log.Printf("Dashboard statistics pre-calculated in %v", time.Since(startTime))
+		}
+	}()
+	
 	addr := fmt.Sprintf("%s:%d", *host, serverPort)
 	log.Printf("Starting server on %s", addr)
 	if err := http.ListenAndServe(addr, router); err != nil {
