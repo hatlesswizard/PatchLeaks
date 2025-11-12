@@ -11,7 +11,7 @@
   },
   "deepseek": {
     "base_url": "https://api.deepseek.com/v1",
-    "key": "",
+    "key": "sk-ed4bbd5abb1f41bfa68333d36c2bf0f9",
     "model": "deepseek-chat"
   },
   "claude": {
@@ -20,10 +20,12 @@
     "model": ""
   },
   "nvd": {
-    "api_key": ""
+    "api_key": "1d5e0e25-9eeb-4744-8e13-e0e9642cf921"
   },
   "parameters": {
+    "ai_log_max_chars": 0,
     "enable_context_analysis": true,
+    "log_ai_io": true,
     "num_ctx": 8192,
     "temperature": 1
   },
