@@ -1,12 +1,9 @@
 package main
-
 import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,12 +12,10 @@ import (
 	"sync"
 	"time"
 )
-
 func runAnalysisBackground(analysisID string, params map[string]interface{}, mode string) {
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Analysis %s panicked: %v", analysisID, r)
 			updateAnalysisStatus(analysisPath, "failed", fmt.Sprintf("%v", r))
 		}
 	}()
@@ -38,14 +33,13 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 		updateAnalysisStatus(analysisPath, "failed", "Unknown analysis mode")
 		return
 	}
-	data, err := os.ReadFile(analysisPath)
+	data, err := TrackedReadFile(analysisPath)
 	if err != nil {
-		log.Printf("Failed to read analysis file: %v", err)
 		return
 	}
+	TrackDiskRead(int64(len(data)))
 	var analysis Analysis
 	if err := json.Unmarshal(data, &analysis); err != nil {
-		log.Printf("Failed to unmarshal analysis: %v", err)
 		return
 	}
 	now := time.Now()
@@ -65,29 +59,22 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 			cveIDsStr = cveIDs
 		}
 		if cveIDsStr != "" && len(analyzedResults) > 0 {
-			log.Printf("Generating CVE writeups for analysis %s", analysisID)
 			writeups := generateCVEWriteupsForResults(analyzedResults, cveIDsStr)
 			if len(writeups) > 0 {
 				analysis.CVEWriteups = writeups
-				log.Printf("Added %d CVE writeups to analysis", len(writeups))
 			}
 		}
 	}
 	updatedData, _ := json.MarshalIndent(analysis, "", "  ")
-	os.WriteFile(analysisPath, updatedData, 0644)
-	
-	
+	TrackedWriteFile(analysisPath, updatedData, 0644)
+	TrackDiskWrite(int64(len(updatedData)))
 	InvalidateDashboardCache()
-	
-	log.Printf("Analysis %s completed successfully", analysisID)
 }
-
 func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResult {
-	log.Printf("Running REAL products analysis with params: %v", params)
 	os.MkdirAll("cache", 0755)
+	TrackDiskWrite(100)
 	cleanOldCache(30)
-	if count, size, err := getCacheStats(); err == nil {
-		log.Printf("Cache stats: %d versions, %.2f MB", count, float64(size)/(1024*1024))
+	if _, _, err := getCacheStats(); err == nil {
 	}
 	product, _ := params["product"].(string)
 	oldVersion, _ := params["old_version"].(string)
@@ -100,38 +87,29 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 	products := loadProducts()
 	productData, exists := products[product]
 	if !exists {
-		log.Printf("Product %s not found", product)
 		return make(map[string]AnalysisResult)
 	}
-	log.Printf("Analyzing %s: %s → %s (AI enabled: %v)", product, oldVersion, newVersion, enableAI)
 	oldPath, err := downloadAndExtractVersion(productData.RepoURL, oldVersion)
 	if err != nil {
-		log.Printf("Failed to download old version %s: %v", oldVersion, err)
 		return make(map[string]AnalysisResult)
 	}
 	newPath, err := downloadAndExtractVersion(productData.RepoURL, newVersion)
 	if err != nil {
-		log.Printf("Failed to download new version %s: %v", newVersion, err)
 		return make(map[string]AnalysisResult)
 	}
 	diffs := compareDirectories(oldPath, newPath, extension)
-	log.Printf("Found %d file differences", len(diffs))
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	if enableAI && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newPath)
 	}
-	log.Printf("Analysis complete: %d files with potential issues", len(results))
 	return results
 }
-
 func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult {
-	log.Printf("Running library analysis with params: %v", params)
 	os.MkdirAll("cache", 0755)
 	cleanOldCache(30)
-	if count, size, err := getCacheStats(); err == nil {
-		log.Printf("Cache stats: %d versions, %.2f MB", count, float64(size)/(1024*1024))
+	if _, _, err := getCacheStats(); err == nil {
 	}
-	repoName, _ := params["repo_name"].(string)
+	_ , _ = params["repo_name"].(string)
 	repoURL, _ := params["repo_url"].(string)
 	oldVersion, _ := params["old_version"].(string)
 	newVersion, _ := params["new_version"].(string)
@@ -141,30 +119,23 @@ func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult
 	extension, _ := params["extension"].(string)
 	specialKeywords, _ := params["special_keywords"].(string)
 	if repoURL == "" {
-		log.Printf("Repository URL not provided")
 		return make(map[string]AnalysisResult)
 	}
-	log.Printf("Analyzing %s: %s → %s (AI enabled: %v)", repoName, oldVersion, newVersion, enableAI)
 	oldPath, err := downloadAndExtractVersion(repoURL, oldVersion)
 	if err != nil {
-		log.Printf("Failed to download old version %s: %v", oldVersion, err)
 		return make(map[string]AnalysisResult)
 	}
 	newPath, err := downloadAndExtractVersion(repoURL, newVersion)
 	if err != nil {
-		log.Printf("Failed to download new version %s: %v", newVersion, err)
 		return make(map[string]AnalysisResult)
 	}
 	diffs := compareDirectories(oldPath, newPath, extension)
-	log.Printf("Found %d file differences", len(diffs))
 	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
 	if enableAI && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newPath)
 	}
-	log.Printf("Library analysis complete: %d files with potential issues", len(results))
 	return results
 }
-
 func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	cacheDir := "cache"
 	os.MkdirAll(cacheDir, 0755)
@@ -172,11 +143,9 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	cacheKey := fmt.Sprintf("%s_%s", repoName, version)
 	cachePath := filepath.Join(cacheDir, cacheKey)
 	if _, err := os.Stat(cachePath); err == nil {
-		log.Printf("Using cached version: %s (%s)", version, cachePath)
 		TrackCacheHit()
 		return cachePath, nil
 	}
-	log.Printf("Downloading and caching %s from %s", version, repoURL)
 	TrackCacheMiss()
 	downloadStartTime := time.Now()
 	downloadURL := fmt.Sprintf("%s/archive/refs/tags/%s.zip", repoURL, version)
@@ -188,7 +157,7 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("failed to download %s: status %d", version, resp.StatusCode)
 	}
-	tempDir, err := os.MkdirTemp("", fmt.Sprintf("patchleaks_%s_%s", version, "temp"))
+	tempDir, err := os.MkdirTemp(cacheDir, fmt.Sprintf("patchleaks_%s_", version))
 	if err != nil {
 		return "", err
 	}
@@ -199,7 +168,7 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 		return "", err
 	}
 	defer zipFile.Close()
-	_, err = io.Copy(zipFile, resp.Body)
+	_, err = TrackedCopy(zipFile, resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -222,16 +191,15 @@ func downloadAndExtractVersion(repoURL, version string) (string, error) {
 	if sourcePath == "" {
 		return "", fmt.Errorf("no directory found in extracted archive")
 	}
-	err = copyDirectory(sourcePath, cachePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to cache version: %v", err)
+	if err := os.Rename(sourcePath, cachePath); err != nil {
+		if err := copyDirectory(sourcePath, cachePath); err != nil {
+			return "", fmt.Errorf("failed to cache version: %v", err)
+		}
 	}
 	downloadDuration := time.Since(downloadStartTime)
 	TrackDownloadTime(downloadDuration)
-	log.Printf("Cached version %s to %s (took %v)", version, cachePath, downloadDuration)
 	return cachePath, nil
 }
-
 func getCacheStats() (int, int64, error) {
 	cacheDir := "cache"
 	entries, err := os.ReadDir(cacheDir)
@@ -251,7 +219,6 @@ func getCacheStats() (int, int64, error) {
 	}
 	return count, totalSize, nil
 }
-
 func getDirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
@@ -265,7 +232,6 @@ func getDirSize(path string) (int64, error) {
 	})
 	return size, err
 }
-
 func cleanOldCache(days int) error {
 	cacheDir := "cache"
 	entries, err := os.ReadDir(cacheDir)
@@ -285,17 +251,14 @@ func cleanOldCache(days int) error {
 				err := os.RemoveAll(entryPath)
 				if err == nil {
 					removed++
-					log.Printf("Removed old cache: %s", entry.Name())
 				}
 			}
 		}
 	}
 	if removed > 0 {
-		log.Printf("Cleaned up %d old cached versions", removed)
 	}
 	return nil
 }
-
 func extractRepoName(repoURL string) string {
 	repoURL = strings.TrimSuffix(repoURL, "/")
 	parts := strings.Split(repoURL, "/")
@@ -304,7 +267,6 @@ func extractRepoName(repoURL string) string {
 	}
 	return fmt.Sprintf("repo_%x", sha256.Sum256([]byte(repoURL)))[:8]
 }
-
 func copyDirectory(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -329,11 +291,10 @@ func copyDirectory(src, dst string) error {
 			return err
 		}
 		defer dstFile.Close()
-		_, err = io.Copy(dstFile, srcFile)
+		_, err = TrackedCopy(dstFile, srcFile)
 		return err
 	})
 }
-
 func extractZip(src, dest string) error {
 	reader, err := zip.OpenReader(src)
 	if err != nil {
@@ -357,7 +318,7 @@ func extractZip(src, dest string) error {
 			fileReader.Close()
 			return err
 		}
-		_, err = io.Copy(targetFile, fileReader)
+		_, err = TrackedCopy(targetFile, fileReader)
 		fileReader.Close()
 		targetFile.Close()
 		if err != nil {
@@ -366,72 +327,57 @@ func extractZip(src, dest string) error {
 	}
 	return nil
 }
-
 func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 	var diffs []DiffFile
-	log.Printf("Comparing directories: %s vs %s", oldPath, newPath)
 	oldFiles := getFiles(oldPath)
 	newFiles := getFiles(newPath)
-	log.Printf("Found %d files in old version, %d files in new version", len(oldFiles), len(newFiles))
 	if len(oldFiles) > 0 {
 		count := 0
-		log.Printf("Sample files in old version:")
-		for file := range oldFiles {
+		for _ = range oldFiles {
 			if count < 5 {
-				log.Printf("  - %s", file)
 				count++
 			} else {
 				break
 			}
 		}
 		if len(oldFiles) > 5 {
-			log.Printf("  ... and %d more files", len(oldFiles)-5)
 		}
 	}
 	if len(newFiles) > 0 {
 		count := 0
-		log.Printf("Sample files in new version:")
-		for file := range newFiles {
+		for _ = range newFiles {
 			if count < 5 {
-				log.Printf("  - %s", file)
 				count++
 			} else {
 				break
 			}
 		}
 		if len(newFiles) > 5 {
-			log.Printf("  ... and %d more files", len(newFiles)-5)
 		}
 	}
 	commonFiles := intersect(oldFiles, newFiles)
 	deletedFiles := subtract(oldFiles, newFiles)
 	addedFiles := subtract(newFiles, oldFiles)
-	log.Printf("Files: %d common, %d deleted, %d added", len(commonFiles), len(deletedFiles), len(addedFiles))
 	if extension != "" {
 		extensions := parseExtensions(extension)
 		commonFiles = filterByExtensions(commonFiles, extensions)
 		deletedFiles = filterByExtensions(deletedFiles, extensions)
 		addedFiles = filterByExtensions(addedFiles, extensions)
-		log.Printf("After extension filter: %d common, %d deleted, %d added", len(commonFiles), len(deletedFiles), len(addedFiles))
 	}
-	log.Printf("Processing %d common files for modifications...", len(commonFiles))
 	modifiedCount := 0
 	successfulDiffs := 0
 	for i, file := range commonFiles {
 		if i%1000 == 0 {
-			log.Printf("Processed %d/%d common files...", i, len(commonFiles))
 		}
 		oldFilePath := filepath.Join(oldPath, file)
 		newFilePath := filepath.Join(newPath, file)
-		oldContent, err1 := os.ReadFile(oldFilePath)
-		newContent, err2 := os.ReadFile(newFilePath)
+		oldContent, err1 := TrackedReadFile(oldFilePath)
+		newContent, err2 := TrackedReadFile(newFilePath)
 		if err1 != nil || err2 != nil {
-			log.Printf("Error reading files %s: old=%v, new=%v", file, err1, err2)
 			continue
 		}
 		if string(oldContent) != string(newContent) {
 			modifiedCount++
-			log.Printf("File %s is different (size: old=%d, new=%d)", file, len(oldContent), len(newContent))
 			diff := compareSingleFile(file, oldFilePath, newFilePath, "modified")
 			if diff != nil {
 				diffs = append(diffs, *diff)
@@ -439,7 +385,6 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 			}
 		}
 	}
-	log.Printf("Found %d modified files out of %d common files, generated %d successful diffs", modifiedCount, len(commonFiles), successfulDiffs)
 	for _, file := range deletedFiles {
 		oldFilePath := filepath.Join(oldPath, file)
 		diff := compareSingleFile(file, oldFilePath, "", "deleted")
@@ -454,14 +399,8 @@ func compareDirectories(oldPath, newPath, extension string) []DiffFile {
 			diffs = append(diffs, *diff)
 		}
 	}
-	log.Printf("Generated %d file differences: %d modified, %d added, %d deleted",
-		len(diffs),
-		countByType(diffs, "modified"),
-		countByType(diffs, "added"),
-		countByType(diffs, "deleted"))
 	return diffs
 }
-
 func getFiles(folder string) map[string]bool {
 	files := make(map[string]bool)
 	filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
@@ -489,7 +428,6 @@ func getFiles(folder string) map[string]bool {
 	})
 	return files
 }
-
 func intersect(set1, set2 map[string]bool) []string {
 	var result []string
 	for file := range set1 {
@@ -499,7 +437,6 @@ func intersect(set1, set2 map[string]bool) []string {
 	}
 	return result
 }
-
 func subtract(set1, set2 map[string]bool) []string {
 	var result []string
 	for file := range set1 {
@@ -509,7 +446,6 @@ func subtract(set1, set2 map[string]bool) []string {
 	}
 	return result
 }
-
 func parseExtensions(extFilter string) []string {
 	var extensions []string
 	parts := strings.Split(extFilter, ",")
@@ -524,7 +460,6 @@ func parseExtensions(extFilter string) []string {
 	}
 	return extensions
 }
-
 func filterByExtensions(files []string, extensions []string) []string {
 	var result []string
 	for _, file := range files {
@@ -538,7 +473,6 @@ func filterByExtensions(files []string, extensions []string) []string {
 	}
 	return result
 }
-
 func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 	if !validateFilename(filename) {
 		return nil
@@ -610,14 +544,12 @@ func compareSingleFile(filename, oldPath, newPath, fileType string) *DiffFile {
 	}
 	return nil
 }
-
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
 }
-
 func readFileLines(filePath string) ([]string, error) {
-	content, err := os.ReadFile(filePath)
+	content, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -627,7 +559,6 @@ func readFileLines(filePath string) ([]string, error) {
 	}
 	return lines, nil
 }
-
 func validateFilename(filename string) bool {
 	if filename == "" || len(filename) > 255 {
 		return false
@@ -643,7 +574,6 @@ func validateFilename(filename string) bool {
 	}
 	return true
 }
-
 func countByType(diffs []DiffFile, diffType string) int {
 	count := 0
 	for _, diff := range diffs {
@@ -653,47 +583,44 @@ func countByType(diffs []DiffFile, diffType string) int {
 	}
 	return count
 }
-
 func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) []string {
-	oldTempFile, err := os.CreateTemp("", "old-*.txt")
-	if err != nil {
+	if len(oldLines) == 0 && len(newLines) == 0 {
 		return []string{}
 	}
-	defer os.Remove(oldTempFile.Name())
-	defer oldTempFile.Close()
-	newTempFile, err := os.CreateTemp("", "new-*.txt")
-	if err != nil {
-		return []string{}
-	}
-	defer os.Remove(newTempFile.Name())
-	defer newTempFile.Close()
-	for _, line := range oldLines {
-		oldTempFile.WriteString(line + "\n")
-	}
-	oldTempFile.Close()
-	for _, line := range newLines {
-		newTempFile.WriteString(line + "\n")
-	}
-	newTempFile.Close()
-	cmd := exec.Command("diff", "-u", oldTempFile.Name(), newTempFile.Name())
+
+	// Use the system diff command instead of difflib
+	cmd := exec.Command("diff", "-u", oldPath, newPath)
 	output, err := cmd.CombinedOutput()
-	if err != nil && cmd.ProcessState.ExitCode() != 1 {
-		return []string{}
-	}
-	lines := strings.Split(string(output), "\n")
-	var result []string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "---") {
-			result = append(result, fmt.Sprintf("--- %s", oldPath))
-		} else if strings.HasPrefix(line, "+++") {
-			result = append(result, fmt.Sprintf("+++ %s", newPath))
+	
+	// diff returns exit code 1 when differences are found, which is expected
+	if err != nil {
+		// Check if it's just because differences were found (exit code 1)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() != 1 {
+				// Actual error, not just "files differ"
+				return []string{}
+			}
 		} else {
-			result = append(result, line)
+			// Some other error occurred
+			return []string{}
 		}
 	}
-	return result
+	
+	// If no output, files are identical
+	if len(output) == 0 {
+		return []string{}
+	}
+	
+	// Split output into lines
+	diffStr := string(output)
+	lines := strings.Split(diffStr, "\n")
+	
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	
+	return lines
 }
-
 func parseAIResponseForVulnerabilities(aiResponse string) string {
 	lines := strings.Split(aiResponse, "\n")
 	vulnCount := 0
@@ -715,7 +642,6 @@ func parseAIResponseForVulnerabilities(aiResponse string) string {
 	}
 	return "AI: No vulnerabilities"
 }
-
 func determineSeverityFromAIResponse(aiResponse string) string {
 	lines := strings.Split(aiResponse, "\n")
 	for _, line := range lines {
@@ -733,7 +659,6 @@ func determineSeverityFromAIResponse(aiResponse string) string {
 	}
 	return "low"
 }
-
 func parseAICVEResponse(aiResponse string) string {
 	lines := strings.Split(aiResponse, "\n")
 	for _, line := range lines {
@@ -754,7 +679,6 @@ func parseAICVEResponse(aiResponse string) string {
 	}
 	return "No"
 }
-
 func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	for _, diff := range diffs {
@@ -774,11 +698,8 @@ func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) m
 	}
 	return results
 }
-
 func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, threadCount int, newPath string) map[string]AnalysisResult {
-	log.Printf("Running AI analysis on %d results with %d threads", len(results), threadCount)
 	if config == nil {
-		log.Printf("AI config not loaded, skipping AI analysis")
 		return results
 	}
 	if threadCount < 1 {
@@ -800,7 +721,6 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 	cveDescriptionCache := make(map[string]string)
 	if cveIDs != "" {
 		cveList := strings.Split(cveIDs, ",")
-		log.Printf("Pre-fetching %d CVE descriptions to avoid redundant NIST requests", len(cveList))
 		for _, cveID := range cveList {
 			cveID = strings.TrimSpace(cveID)
 			if cveID != "" {
@@ -808,9 +728,7 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 				cveDescriptionCache[cveID] = description
 			}
 		}
-		log.Printf("CVE descriptions cached for %d CVEs", len(cveDescriptionCache))
 	}
-	log.Printf("Processing %d files with %d threads", len(workItems), threadCount)
 	workChan := make(chan workItem, len(workItems))
 	resultChan := make(chan workItem, len(workItems))
 	var wg sync.WaitGroup
@@ -821,9 +739,7 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 			IncrementActiveAIThreads()
 			defer DecrementActiveAIThreads()
 			for item := range workChan {
-				
 				ThrottleYield()
-				
 				diffContent := strings.Join(item.result.Context, "\n")
 				enhancedDiff := diffContent
 				filePath := filepath.Join(newPath, item.filename)
@@ -869,7 +785,7 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		}(i)
 	}
 	go func() {
-		for _, item := range workItems {
+	for _, item := range workItems {
 			workChan <- item
 		}
 		close(workChan)
@@ -883,17 +799,13 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 		results[item.filename] = item.result
 		completedCount++
 		if completedCount%10 == 0 || completedCount == len(workItems) {
-			log.Printf("Progress: %d/%d files completed", completedCount, len(workItems))
 		}
 	}
-	log.Printf("AI analysis completed: %d files processed", completedCount)
 	if cveIDs != "" {
-		log.Printf("Generating CVE writeups for matched vulnerabilities")
 		generateCVEWriteupsForResults(results, cveIDs)
 	}
 	return results
 }
-
 func generateCVEWriteupsForResults(results map[string]AnalysisResult, cveIDs string) map[string]string {
 	writeups := make(map[string]string)
 	cveList := strings.Split(cveIDs, ",")
@@ -916,19 +828,15 @@ func generateCVEWriteupsForResults(results map[string]AnalysisResult, cveIDs str
 			}
 		}
 		if len(matchingAnalyses) > 0 {
-			log.Printf("Generating writeup for %s (%d matching files)", cveID, len(matchingAnalyses))
 			writeup := GenerateCVEWriteup(cveID, cveDescription, matchingAnalyses)
 			writeups[cveID] = writeup
 		}
 	}
 	if len(writeups) > 0 {
-		log.Printf("Generated %d CVE writeups", len(writeups))
 	}
 	return writeups
 }
-
 func runFolderAnalysis(params map[string]interface{}) map[string]AnalysisResult {
-	log.Printf("Running folder analysis with params: %v", params)
 	oldFolder, _ := params["old_folder"].(string)
 	newFolder, _ := params["new_folder"].(string)
 	extension, _ := params["extension"].(string)
@@ -942,26 +850,21 @@ func runFolderAnalysis(params map[string]interface{}) map[string]AnalysisResult 
 	diffs := compareFolders(oldFolder, newFolder, extension, keywords)
 	results := analyzeDiffsWithKeywords(diffs, keywords)
 	if enableAI == "on" && len(results) > 0 {
-		results = processAIAnalysis(results, diffs, cveIDs)
+		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newFolder)
 	}
 	return results
 }
-
 func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) []DiffFile {
-	log.Printf("Comparing folders: %s -> %s", oldFolder, newFolder)
 	oldFiles := getFilesRecursive(oldFolder)
 	newFiles := getFilesRecursive(newFolder)
-	log.Printf("Found %d files in old folder, %d files in new folder", len(oldFiles), len(newFiles))
 	commonFiles := intersectFiles(oldFiles, newFiles)
 	deletedFiles := subtractFiles(oldFiles, newFiles)
 	addedFiles := subtractFiles(newFiles, oldFiles)
-	log.Printf("Common: %d, Added: %d, Deleted: %d files", len(commonFiles), len(addedFiles), len(deletedFiles))
 	if extFilter != "" {
 		exts := parseExtensions(extFilter)
 		commonFiles = filterByExtensions(commonFiles, exts)
 		deletedFiles = filterByExtensions(deletedFiles, exts)
 		addedFiles = filterByExtensions(addedFiles, exts)
-		log.Printf("After extension filter: Common: %d, Added: %d, Deleted: %d files", len(commonFiles), len(addedFiles), len(deletedFiles))
 	}
 	var diffs []DiffFile
 	for _, file := range commonFiles {
@@ -1004,7 +907,8 @@ func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) [
 			}
 		}
 	}
-	for _, file := range addedFiles {
+	for _, entry := range addedFiles {
+		file := entry
 		newPath := filepath.Join(newFolder, file)
 		newLines, _ := readFileLines(newPath)
 		if len(newLines) > 0 {
@@ -1025,10 +929,8 @@ func compareFolders(oldFolder, newFolder, extFilter string, keywords []string) [
 			}
 		}
 	}
-	log.Printf("Generated %d diff files", len(diffs))
 	return diffs
 }
-
 func getFilesRecursive(folder string) []string {
 	var files []string
 	filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
@@ -1043,35 +945,32 @@ func getFilesRecursive(folder string) []string {
 	})
 	return files
 }
-
 func intersectFiles(a, b []string) []string {
 	set := make(map[string]bool)
-	for _, item := range b {
-		set[item] = true
+	for _, entry := range b {
+		set[entry] = true
 	}
 	var result []string
-	for _, item := range a {
-		if set[item] {
-			result = append(result, item)
+	for _, entry := range a {
+		if set[entry] {
+			result = append(result, entry)
 		}
 	}
 	return result
 }
-
 func subtractFiles(a, b []string) []string {
 	set := make(map[string]bool)
-	for _, item := range b {
-		set[item] = true
+	for _, entry := range b {
+		set[entry] = true
 	}
 	var result []string
-	for _, item := range a {
-		if !set[item] {
-			result = append(result, item)
+	for _, entry := range a {
+		if !set[entry] {
+			result = append(result, entry)
 		}
 	}
 	return result
 }
-
 func shouldIncludeDiff(diffLines []string, keywords []string) bool {
 	if len(keywords) == 0 {
 		return true
@@ -1085,7 +984,6 @@ func shouldIncludeDiff(diffLines []string, keywords []string) bool {
 	}
 	return false
 }
-
 func shouldIncludeFile(lines []string, keywords []string) bool {
 	if len(keywords) == 0 {
 		return true
@@ -1099,7 +997,6 @@ func shouldIncludeFile(lines []string, keywords []string) bool {
 	}
 	return false
 }
-
 func analyzeDiffsWithKeywords(diffs []DiffFile, keywords []string) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	for _, diff := range diffs {
@@ -1115,10 +1012,8 @@ func analyzeDiffsWithKeywords(diffs []DiffFile, keywords []string) map[string]An
 	}
 	return results
 }
-
 func processAIAnalysis(results map[string]AnalysisResult, diffs []DiffFile, cveIDs string) map[string]AnalysisResult {
 	if config == nil {
-		log.Println("AI config not loaded, skipping AI analysis")
 		return results
 	}
 	for _, diff := range diffs {
@@ -1169,9 +1064,8 @@ func processAIAnalysis(results map[string]AnalysisResult, diffs []DiffFile, cveI
 	}
 	return results
 }
-
 func updateAnalysisStatus(analysisPath, status, errorMsg string) {
-	data, err := os.ReadFile(analysisPath)
+	data, err := TrackedReadFile(analysisPath)
 	if err != nil {
 		return
 	}
@@ -1184,5 +1078,5 @@ func updateAnalysisStatus(analysisPath, status, errorMsg string) {
 		analysis.Meta.Error = errorMsg
 	}
 	updatedData, _ := json.MarshalIndent(analysis, "", "  ")
-	os.WriteFile(analysisPath, updatedData, 0644)
+	TrackedWriteFile(analysisPath, updatedData, 0644)
 }
