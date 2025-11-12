@@ -1,15 +1,12 @@
 package main
-
 import (
 	"encoding/json"
 	"time"
 )
-
 type FlashMessage struct {
 	Category string `json:"category"`
 	Message  string `json:"message"`
 }
-
 type Analysis struct {
 	ID          string                    `json:"id,omitempty"`
 	Meta        AnalysisMeta              `json:"meta"`
@@ -17,7 +14,6 @@ type Analysis struct {
 	VulnCount   int                       `json:"vuln_count,omitempty"`
 	CVEWriteups map[string]string         `json:"cve_writeups,omitempty"`
 }
-
 type AnalysisMeta struct {
 	CreatedAt  time.Time              `json:"created_at"`
 	FinishedAt *time.Time             `json:"finished_at,omitempty"`
@@ -29,7 +25,6 @@ type AnalysisMeta struct {
 	Error      string                 `json:"error,omitempty"`
 	Params     map[string]interface{} `json:"params,omitempty"`
 }
-
 type AnalysisResult struct {
 	Context             []string            `json:"context"`
 	AIResponse          string              `json:"ai_response,omitempty"`
@@ -37,12 +32,10 @@ type AnalysisResult struct {
 	VulnSeverity        string              `json:"vuln_severity,omitempty"`
 	CVEMatches          map[string]CVEMatch `json:"cve_matches,omitempty"`
 }
-
 type CVEMatch struct {
 	Result      string `json:"result"`
 	Description string `json:"description"`
 }
-
 type Pagination struct {
 	Page        int    `json:"page"`
 	PerPage     int    `json:"per_page"`
@@ -58,12 +51,10 @@ type Pagination struct {
 	EndItem     int    `json:"end_item"`
 	PageNumbers []int  `json:"page_numbers"`
 }
-
 type Product struct {
 	RepoURL  string   `json:"repo_url"`
 	Versions []string `json:"versions"`
 }
-
 type LibraryRepo struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
@@ -75,19 +66,16 @@ type LibraryRepo struct {
 	LastVersion string     `json:"last_version,omitempty"`
 	AutoScan    bool       `json:"auto_scan"`
 }
-
 type DiffFile struct {
 	Filename string   `json:"filename"`
 	Diff     []string `json:"diff"`
 	Type     string   `json:"type"`
 }
-
 type VersionInfo struct {
 	Version   string    `json:"version"`
 	Path      string    `json:"path"`
 	Timestamp time.Time `json:"timestamp"`
 }
-
 type CVE struct {
 	ID          string    `json:"id"`
 	Description string    `json:"description"`
@@ -95,7 +83,6 @@ type CVE struct {
 	Published   time.Time `json:"published"`
 	Modified    time.Time `json:"modified"`
 }
-
 func (c *CVE) UnmarshalJSON(data []byte) error {
 	type NVDDescription struct {
 		Lang  string `json:"lang"`
@@ -126,7 +113,6 @@ func (c *CVE) UnmarshalJSON(data []byte) error {
 	c.Severity = "UNKNOWN"
 	return nil
 }
-
 func parseNVDate(dateStr string) time.Time {
 	if dateStr == "" {
 		return time.Time{}
@@ -146,7 +132,6 @@ func parseNVDate(dateStr string) time.Time {
 	}
 	return time.Time{}
 }
-
 type NVDResponse struct {
 	ResultsPerPage  int `json:"resultsPerPage"`
 	StartIndex      int `json:"startIndex"`
