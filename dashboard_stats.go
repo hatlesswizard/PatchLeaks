@@ -1,8 +1,6 @@
 package main
-
 import (
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,911 +10,112 @@ import (
 	"sync"
 	"time"
 )
-
-
 type DashboardStats struct {
-	Timestamp         time.Time           `json:"timestamp"`
-	AnalysisMetrics   AnalysisMetrics     `json:"analysis_metrics"`
+	Timestamp         time.Time            `json:"timestamp"`
+	AnalysisMetrics   AnalysisMetrics      `json:"analysis_metrics"`
 	VulnerabilityMets VulnerabilityMetrics `json:"vulnerability_metrics"`
-	CVEMetrics        CVEMetrics          `json:"cve_metrics"`
-	AIMetrics         AIMetrics           `json:"ai_metrics"`
-	RepositoryMetrics RepositoryMetrics   `json:"repository_metrics"`
-	FileMetrics       FileMetrics         `json:"file_metrics"`
-	CacheMetrics      CacheMetricsStats   `json:"cache_metrics"`
-	TrendMetrics      TrendMetrics        `json:"trend_metrics"`
-	ProductMetrics    ProductMetrics      `json:"product_metrics"`
-	SystemMetrics     SystemMetrics       `json:"system_metrics"`
-	LanguageStats     LanguageStats       `json:"language_stats"`
+	CVEMetrics        CVEMetrics           `json:"cve_metrics"`
+	AIMetrics         AIMetrics            `json:"ai_metrics"`
+	RepositoryMetrics RepositoryMetrics    `json:"repository_metrics"`
+	FileMetrics       FileMetrics          `json:"file_metrics"`
+	CacheMetrics      CacheMetricsStats    `json:"cache_metrics"`
+	TrendMetrics      TrendMetrics         `json:"trend_metrics"`
+	ProductMetrics    ProductMetrics       `json:"product_metrics"`
+	SystemMetrics     SystemMetrics        `json:"system_metrics"`
+	LanguageStats     LanguageStats        `json:"language_stats"`
 }
-
 type AnalysisMetrics struct {
-	TotalCompleted  int     `json:"total_completed"`
-	ActiveRunning   int     `json:"active_running"`
-	TotalVulns      int     `json:"total_vulnerabilities"`
+	TotalCompleted      int     `json:"total_completed"`
+	ActiveRunning       int     `json:"active_running"`
+	TotalVulns          int     `json:"total_vulnerabilities"`
 	AvgVulnsPerAnalysis float64 `json:"avg_vulnerabilities_per_analysis"`
-	DetectionRate   float64 `json:"vulnerability_detection_rate"`
+	DetectionRate       float64 `json:"vulnerability_detection_rate"`
 }
-
 type VulnerabilityMetrics struct {
-	ByProduct          map[string]int    `json:"by_product"`
+	ByProduct          map[string]int      `json:"by_product"`
 	TopVulnerabilities []VulnerabilityType `json:"top_vulnerabilities"`
 }
-
 type VulnerabilityType struct {
 	Type  string `json:"type"`
 	Count int    `json:"count"`
 }
-
 type CVEMetrics struct {
 	TotalMatches int     `json:"total_matches"`
 	MatchRate    float64 `json:"match_rate"`
 }
-
 type AIMetrics struct {
-	AvgAnalysisTimeByScale map[string]int  `json:"avg_analysis_time_by_scale"`
+	AvgAnalysisTimeByScale map[string]int   `json:"avg_analysis_time_by_scale"`
 	ConfidenceLevels       ConfidenceLevels `json:"confidence_levels"`
-	ActiveThreads          int             `json:"active_threads"`
-	MaxThreads             int             `json:"max_threads"`
+	ActiveThreads          int              `json:"active_threads"`
+	MaxThreads             int              `json:"max_threads"`
 }
-
 type ConfidenceLevels struct {
-	Confirmed     int `json:"confirmed"`
-	Uncertain     int `json:"uncertain"`
+	Confirmed int `json:"confirmed"`
+	Uncertain int `json:"uncertain"`
 }
-
 type RepositoryMetrics struct {
-	MonitoredLibraries   int                `json:"monitored_libraries"`
-	AutoScanEnabled      int                `json:"auto_scan_enabled"`
-	VersionChecks        int                `json:"version_checks_performed"`
-	NewVersionsDetected  int                `json:"new_versions_detected"`
-	MostActiveRepos      []RepositoryActivity `json:"most_active_repositories"`
+	MonitoredLibraries  int                  `json:"monitored_libraries"`
+	AutoScanEnabled     int                  `json:"auto_scan_enabled"`
+	VersionChecks       int                  `json:"version_checks_performed"`
+	NewVersionsDetected int                  `json:"new_versions_detected"`
+	MostActiveRepos     []RepositoryActivity `json:"most_active_repositories"`
 }
-
 type RepositoryActivity struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
 }
-
 type FileMetrics struct {
 	TotalFilesAnalyzed int `json:"total_files_analyzed"`
 }
-
 type CacheMetricsStats struct {
-	SizeBytes          int64   `json:"size_bytes"`
-	CachedVersions     int     `json:"cached_versions"`
-	HitRate            float64 `json:"hit_rate"`
-	AvgDownloadTime    float64 `json:"avg_download_time_seconds"`
-	DiskSpaceSaved     int64   `json:"disk_space_saved_bytes"`
+	SizeBytes       int64   `json:"size_bytes"`
+	CachedVersions  int     `json:"cached_versions"`
+	HitRate         float64 `json:"hit_rate"`
+	AvgDownloadTime float64 `json:"avg_download_time_seconds"`
+	DiskSpaceSaved  int64   `json:"disk_space_saved_bytes"`
 }
-
 type TrendMetrics struct {
-	AnalysesPerDay         map[string]int `json:"analyses_per_day"`
-	AvgTimeByType          map[string]float64 `json:"avg_time_by_type"`
-	HistoricalVulnTrends   []VulnTrendPoint `json:"historical_vuln_trends"`
+	AnalysesPerDay       map[string]int     `json:"analyses_per_day"`
+	AvgTimeByType        map[string]float64 `json:"avg_time_by_type"`
+	HistoricalVulnTrends []VulnTrendPoint   `json:"historical_vuln_trends"`
 }
-
 type VulnTrendPoint struct {
 	Month string `json:"month"`
 	Count int    `json:"count"`
 }
-
 type ProductMetrics struct {
-	TotalConfigured   int           `json:"total_configured"`
-	MostAnalyzed      []ProductActivity `json:"most_analyzed"`
-	AvgCoverage       float64       `json:"avg_coverage"`
+	TotalConfigured int               `json:"total_configured"`
+	MostAnalyzed    []ProductActivity `json:"most_analyzed"`
+	AvgCoverage     float64           `json:"avg_coverage"`
 }
-
 type ProductActivity struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
 }
-
 type SystemMetrics struct {
-	MemoryMB    uint64 `json:"memory_mb"`
-	Goroutines  int    `json:"goroutines"`
+	MemoryMB   uint64 `json:"memory_mb"`
+	Goroutines int    `json:"goroutines"`
 }
-
 type LanguageStats struct {
 	Products []LanguageStat `json:"products"`
 	Library  []LanguageStat `json:"library"`
 	Folder   []LanguageStat `json:"folder"`
 }
-
 type LanguageStat struct {
 	Language  string `json:"language"`
 	FileCount int    `json:"file_count"`
 }
-
-
 var (
 	dashboardCache      *DashboardStats
 	dashboardCacheMutex sync.RWMutex
 	dashboardCacheTime  time.Time
-	dashboardCacheTTL   = 30 * time.Second 
-	
+	dashboardCacheTTL   = 30 * time.Second
 	cwePatternRegex = regexp.MustCompile(`CWE-(\d+)\s*(?::|-)\s*([^\n\[]+?)(?:\s+-\s+(?:CWE-\d+|\S+\.\S+|\S+/\S+)|\s+\[|\n|$)`)
-	
-	isRefreshing     bool
-	isRefreshingLock sync.Mutex
-	processedAnalyses      = make(map[string]time.Time) 
+	isRefreshing           bool
+	isRefreshingLock       sync.Mutex
+	processedAnalyses      = make(map[string]time.Time)
 	processedAnalysesMutex sync.RWMutex
-)
-
-
-func GetDashboardStats() (*DashboardStats, error) {
-	dashboardCacheMutex.RLock()
-	cacheExists := dashboardCache != nil
-	cacheAge := time.Since(dashboardCacheTime)
-	isStale := cacheAge >= dashboardCacheTTL
-	dashboardCacheMutex.RUnlock()
-
-	
-	if cacheExists {
-		dashboardCacheMutex.RLock()
-		cachedData := dashboardCache
-		dashboardCacheMutex.RUnlock()
-		
-		if isStale {
-			isRefreshingLock.Lock()
-			if !isRefreshing {
-				isRefreshing = true
-				isRefreshingLock.Unlock()
-				
-				log.Printf("Dashboard cache stale (%v old), refreshing in background...", cacheAge)
-				go func() {
-					defer func() {
-						isRefreshingLock.Lock()
-						isRefreshing = false
-						isRefreshingLock.Unlock()
-					}()
-					calculateAndCacheDashboardStats()
-				}()
-			} else {
-				isRefreshingLock.Unlock()
-			}
-		}
-		
-		return cachedData, nil
-	}
-	
-	log.Printf("No dashboard cache exists, calculating for first time...")
-	return calculateAndCacheDashboardStats()
-}
-
-
-func loadNewOrChangedAnalyses() ([]Analysis, bool) {
-	newAnalyses := []Analysis{}
-	hasChanges := false
-	
-	files, err := os.ReadDir("saved_analyses")
-	if err != nil {
-		return newAnalyses, false
-	}
-	
-	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".json") {
-			analysisID := strings.TrimSuffix(file.Name(), ".json")
-			
-			
-			filePath := filepath.Join("saved_analyses", file.Name())
-			info, err := os.Stat(filePath)
-			if err != nil {
-				continue
-			}
-			
-			processedAnalysesMutex.RLock()
-			lastModTime, exists := processedAnalyses[analysisID]
-			processedAnalysesMutex.RUnlock()
-			
-			
-			if exists && !info.ModTime().After(lastModTime) {
-				continue
-			}
-			
-			data, err := os.ReadFile(filePath)
-			if err != nil {
-				continue
-			}
-			
-			var analysis Analysis
-			if err := json.Unmarshal(data, &analysis); err != nil {
-				continue
-			}
-			analysis.ID = analysisID
-			newAnalyses = append(newAnalyses, analysis)
-			hasChanges = true
-			processedAnalysesMutex.Lock()
-			processedAnalyses[analysisID] = info.ModTime()
-			processedAnalysesMutex.Unlock()
-		}
-	}
-	
-	if hasChanges {
-		log.Printf("Found %d new/changed analyses", len(newAnalyses))
-	}
-	
-	return newAnalyses, hasChanges
-}
-
-func calculateAndCacheDashboardStats() (*DashboardStats, error) {
-	startTime := time.Now()
-	
-	
-	dashboardCacheMutex.RLock()
-	hasExistingCache := dashboardCache != nil
-	dashboardCacheMutex.RUnlock()
-	
-	if hasExistingCache {
-		
-		newAnalyses, hasChanges := loadNewOrChangedAnalyses()
-		
-		if !hasChanges {
-			
-			dashboardCacheMutex.RLock()
-			cachedData := dashboardCache
-			dashboardCacheMutex.RUnlock()
-			log.Printf("No changes detected, reusing cache")
-			return cachedData, nil
-		}
-		log.Printf("Detected %d changes, performing full recalculation", len(newAnalyses))
-	}
-	
-	stats := &DashboardStats{
-		Timestamp: time.Now(),
-	}
-
-	
-	analyses := loadAllAnalyses()
-	log.Printf("Loaded %d analyses in %v", len(analyses), time.Since(startTime))
-
-	
-	var wg sync.WaitGroup
-	wg.Add(10)
-
-	go func() {
-		defer wg.Done()
-		stats.AnalysisMetrics = calculateAnalysisMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.VulnerabilityMets = calculateVulnerabilityMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.CVEMetrics = calculateCVEMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.AIMetrics = calculateAIMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.RepositoryMetrics = calculateRepositoryMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.FileMetrics = calculateFileMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.CacheMetrics = calculateCacheMetrics()
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.TrendMetrics = calculateTrendMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.ProductMetrics = calculateProductMetrics(analyses)
-	}()
-
-	go func() {
-		defer wg.Done()
-		stats.SystemMetrics = calculateSystemMetrics()
-	}()
-
-	
-	wg.Wait()
-	
-	
-	stats.LanguageStats = calculateLanguageStats(analyses)
-
-	
-	dashboardCacheMutex.Lock()
-	dashboardCache = stats
-	dashboardCacheTime = time.Now()
-	dashboardCacheMutex.Unlock()
-
-	elapsed := time.Since(startTime)
-	log.Printf("Dashboard statistics calculated successfully in %v", elapsed)
-	return stats, nil
-}
-
-func calculateAnalysisMetrics(analyses []Analysis) AnalysisMetrics {
-	metrics := AnalysisMetrics{}
-	totalVulns := 0
-	vulnAnalyses := 0
-
-	for _, analysis := range analyses {
-		if analysis.Meta.Status == "completed" {
-			metrics.TotalCompleted++
-			vulnCount := countVulnerabilities(analysis.Results)
-			if vulnCount > 0 {
-				vulnAnalyses++
-				totalVulns += vulnCount
-			}
-		} else if analysis.Meta.Status == "running" || analysis.Meta.Status == "in_progress" || analysis.Meta.Status == "analyzing" {
-			metrics.ActiveRunning++
-		}
-	}
-
-	metrics.TotalVulns = totalVulns
-	if metrics.TotalCompleted > 0 {
-		metrics.AvgVulnsPerAnalysis = float64(totalVulns) / float64(metrics.TotalCompleted)
-		metrics.DetectionRate = (float64(vulnAnalyses) / float64(metrics.TotalCompleted)) * 100
-	}
-
-	return metrics
-}
-
-func calculateVulnerabilityMetrics(analyses []Analysis) VulnerabilityMetrics {
-	metrics := VulnerabilityMetrics{
-		ByProduct: make(map[string]int),
-	}
-
-	
-	var vulnTypesMutex sync.Mutex
-	vulnTypes := make(map[string]int)
-
-	
-	var wg sync.WaitGroup
-	resultsChan := make(chan struct {
-		productName string
-		vulnCount   int
-		cwes        []string
-	}, len(analyses))
-
-	
-	semaphore := make(chan struct{}, 10)
-
-	for _, analysis := range analyses {
-		if analysis.Meta.Status != "completed" {
-			continue
-		}
-
-		wg.Add(1)
-		go func(analysis Analysis) {
-			defer wg.Done()
-			semaphore <- struct{}{}        
-			defer func() { <-semaphore }() 
-
-			productName := ""
-			if product, ok := analysis.Meta.Params["product"].(string); ok {
-				productName = product
-			} else if repoName, ok := analysis.Meta.Params["repo_name"].(string); ok {
-				productName = repoName
-			}
-
-			vulnCount := countVulnerabilities(analysis.Results)
-
-			
-			var cwes []string
-			for _, result := range analysis.Results {
-				if result.AIResponse != "" {
-					cwes = append(cwes, extractCWEsFromAIResponse(result.AIResponse)...)
-				}
-			}
-
-			resultsChan <- struct {
-				productName string
-				vulnCount   int
-				cwes        []string
-			}{productName, vulnCount, cwes}
-		}(analysis)
-	}
-
-	
-	go func() {
-		wg.Wait()
-		close(resultsChan)
-	}()
-
-	
-	for result := range resultsChan {
-		if result.productName != "" && result.vulnCount > 0 {
-			metrics.ByProduct[result.productName] += result.vulnCount
-		}
-
-		vulnTypesMutex.Lock()
-		for _, cwe := range result.cwes {
-			vulnTypes[cwe]++
-		}
-		vulnTypesMutex.Unlock()
-	}
-
-	
-	for vType, count := range vulnTypes {
-		metrics.TopVulnerabilities = append(metrics.TopVulnerabilities, VulnerabilityType{
-			Type:  vType,
-			Count: count,
-		})
-	}
-
-	sort.Slice(metrics.TopVulnerabilities, func(i, j int) bool {
-		return metrics.TopVulnerabilities[i].Count > metrics.TopVulnerabilities[j].Count
-	})
-
-	if len(metrics.TopVulnerabilities) > 10 {
-		metrics.TopVulnerabilities = metrics.TopVulnerabilities[:10]
-	}
-
-	return metrics
-}
-
-
-
-
-func extractCWEsFromAIResponse(aiResponse string) []string {
-	cwes := []string{}
-	found := make(map[string]bool)
-
-	
-	matches := cwePatternRegex.FindAllStringSubmatch(aiResponse, -1)
-	
-	for _, match := range matches {
-		if len(match) >= 3 {
-			cweNumber := match[1]
-			description := strings.TrimSpace(match[2])
-			
-			
-			repeatPattern := " - CWE-" + cweNumber
-			if strings.HasSuffix(description, repeatPattern) {
-				description = strings.TrimSpace(strings.TrimSuffix(description, repeatPattern))
-			}
-			
-			
-			
-			parts := strings.Split(description, " - ")
-			if len(parts) > 1 {
-				lastPart := parts[len(parts)-1]
-				
-				if len(lastPart) < 30 && !strings.ContainsAny(lastPart, "()'/") {
-					
-					if !strings.Contains(lastPart, " ") || strings.HasPrefix(lastPart, "apps/") || strings.HasPrefix(lastPart, "packages/") {
-						
-						description = strings.TrimSpace(strings.Join(parts[:len(parts)-1], " - "))
-					}
-				}
-			}
-			
-			
-			if len(description) < 3 {
-				continue
-			}
-			
-			
-			cweEntry := "CWE-" + cweNumber + ": " + description
-			
-			if !found[cweEntry] {
-				cwes = append(cwes, cweEntry)
-				found[cweEntry] = true
-			}
-		}
-	}
-
-	return cwes
-}
-
-func calculateCVEMetrics(analyses []Analysis) CVEMetrics {
-	metrics := CVEMetrics{}
-	analysesWithMatches := 0
-	totalAnalysesWithCVEChecks := 0
-
-	for _, analysis := range analyses {
-		if analysis.Meta.Status != "completed" {
-			continue
-		}
-
-		hasAnyCVECheck := false
-		hasAnyMatch := false
-
-		for _, result := range analysis.Results {
-			if result.CVEMatches != nil && len(result.CVEMatches) > 0 {
-				hasAnyCVECheck = true
-				for _, match := range result.CVEMatches {
-					if match.Result == "Yes" {
-						metrics.TotalMatches++
-						hasAnyMatch = true
-					}
-				}
-			}
-		}
-
-		if hasAnyCVECheck {
-			totalAnalysesWithCVEChecks++
-			if hasAnyMatch {
-				analysesWithMatches++
-			}
-		}
-	}
-
-	if totalAnalysesWithCVEChecks > 0 {
-		metrics.MatchRate = (float64(analysesWithMatches) / float64(totalAnalysesWithCVEChecks)) * 100
-	}
-
-	return metrics
-}
-
-func calculateAIMetrics(analyses []Analysis) AIMetrics {
-	metrics := AIMetrics{
-		AvgAnalysisTimeByScale: make(map[string]int),
-		MaxThreads:             *aiThreads,
-	}
-
-	
-	timeBuckets := map[string][]float64{
-		"10_files":   {},
-		"100_files":  {},
-		"1000_files": {},
-	}
-
-	confidenceStats := make(map[string]int)
-
-	for _, analysis := range analyses {
-		if analysis.Meta.Status != "completed" {
-			continue
-		}
-
-		
-		fileCount := len(analysis.Results)
-		if analysis.Meta.FinishedAt != nil {
-			duration := analysis.Meta.FinishedAt.Sub(analysis.Meta.CreatedAt).Seconds()
-			
-			
-			if duration > 0 {
-				// Adjusted thresholds to match label names
-				if fileCount <= 10 {
-					timeBuckets["10_files"] = append(timeBuckets["10_files"], duration)
-				} else if fileCount <= 100 {
-					timeBuckets["100_files"] = append(timeBuckets["100_files"], duration)
-				} else if fileCount <= 1000 {
-					timeBuckets["1000_files"] = append(timeBuckets["1000_files"], duration)
-				}
-			}
-		}
-
-		
-		for _, result := range analysis.Results {
-			status := strings.ToLower(result.VulnerabilityStatus)
-			if strings.Contains(status, "yes") || strings.Contains(status, "vulnerabilities") {
-				confidenceStats["confirmed"]++
-			} else if strings.Contains(status, "not sure") {
-				confidenceStats["uncertain"]++
-			}
-		}
-	}
-
-	
-	for bucket, times := range timeBuckets {
-		if len(times) > 0 {
-			var sum float64
-			for _, t := range times {
-				sum += t
-			}
-			metrics.AvgAnalysisTimeByScale[bucket] = int(sum / float64(len(times)))
-		}
-	}
-
-	metrics.ConfidenceLevels = ConfidenceLevels{
-		Confirmed:     confidenceStats["confirmed"],
-		Uncertain:     confidenceStats["uncertain"],
-	}
-
-	
-	metrics.ActiveThreads = getActiveAIThreads()
-
-	return metrics
-}
-
-func calculateRepositoryMetrics(analyses []Analysis) RepositoryMetrics {
-	metrics := RepositoryMetrics{
-		MostActiveRepos: []RepositoryActivity{},
-	}
-
-	
-	library := loadLibrary()
-	metrics.MonitoredLibraries = len(library)
-	for _, repo := range library {
-		if repo.AutoScan {
-			metrics.AutoScanEnabled++
-		}
-		if repo.LastChecked != nil {
-			metrics.VersionChecks++
-		}
-	}
-
-	
-	repoActivity := make(map[string]int)
-	for _, analysis := range analyses {
-		if analysis.Meta.Status != "completed" {
-			continue
-		}
-
-		
-		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" {
-			if repoName, ok := analysis.Meta.Params["repo_name"].(string); ok {
-				repoActivity[repoName]++
-			} else if repoURL, ok := analysis.Meta.Params["repo_url"].(string); ok {
-				repoActivity[repoURL]++
-			}
-		}
-	}
-
-	
-	for repo, count := range repoActivity {
-		metrics.MostActiveRepos = append(metrics.MostActiveRepos, RepositoryActivity{
-			Name:  repo,
-			Count: count,
-		})
-	}
-
-	sort.Slice(metrics.MostActiveRepos, func(i, j int) bool {
-		return metrics.MostActiveRepos[i].Count > metrics.MostActiveRepos[j].Count
-	})
-
-	if len(metrics.MostActiveRepos) > 10 {
-		metrics.MostActiveRepos = metrics.MostActiveRepos[:10]
-	}
-
-	
-	metrics.NewVersionsDetected = getNewVersionsDetected()
-
-	return metrics
-}
-
-func calculateFileMetrics(analyses []Analysis) FileMetrics {
-	metrics := FileMetrics{}
-
-	for _, analysis := range analyses {
-		if analysis.Meta.Status == "completed" {
-			metrics.TotalFilesAnalyzed += len(analysis.Results)
-		}
-	}
-
-	return metrics
-}
-
-func calculateCacheMetrics() CacheMetricsStats {
-	metrics := CacheMetricsStats{}
-
-	count, size, err := getCacheStats()
-	if err == nil {
-		metrics.CachedVersions = count
-		metrics.SizeBytes = size
-	}
-
-	
-	hits, misses := getCacheHitStats()
-	total := hits + misses
-	if total > 0 {
-		metrics.HitRate = (float64(hits) / float64(total)) * 100
-	}
-
-	
-	metrics.AvgDownloadTime = getAvgDownloadTime()
-
-	
-	if metrics.HitRate > 0 && metrics.SizeBytes > 0 {
-		avgSize := float64(metrics.SizeBytes) / float64(metrics.CachedVersions)
-		metrics.DiskSpaceSaved = int64(float64(hits) * avgSize)
-	}
-
-	return metrics
-}
-
-func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
-	metrics := TrendMetrics{
-		AnalysesPerDay:       make(map[string]int),
-		AvgTimeByType:        make(map[string]float64),
-		HistoricalVulnTrends: []VulnTrendPoint{},
-	}
-
-	timingByType := make(map[string][]float64)
-	vulnsByMonth := make(map[string]int)
-
-	for _, analysis := range analyses {
-		if analysis.Meta.Status != "completed" {
-			continue
-		}
-
-		
-		dayKey := analysis.Meta.CreatedAt.Format("2006-01-02")
-		metrics.AnalysesPerDay[dayKey]++
-
-		
-		analysisPath := filepath.Join("saved_analyses", analysis.ID+".json")
-		if info, err := os.Stat(analysisPath); err == nil {
-			duration := time.Since(info.ModTime()).Seconds()
-			sourceType := analysis.Meta.Source
-			if sourceType == "" {
-				sourceType = "unknown"
-			}
-			timingByType[sourceType] = append(timingByType[sourceType], duration)
-		}
-
-		
-		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" {
-			monthKey := analysis.Meta.CreatedAt.Format("2006-01")
-			vulnCount := countVulnerabilities(analysis.Results)
-			vulnsByMonth[monthKey] += vulnCount
-		}
-	}
-
-	
-	for sourceType, times := range timingByType {
-		if len(times) > 0 {
-			var sum float64
-			for _, t := range times {
-				sum += t
-			}
-			metrics.AvgTimeByType[sourceType] = sum / float64(len(times))
-		}
-	}
-
-	
-	for month, count := range vulnsByMonth {
-		metrics.HistoricalVulnTrends = append(metrics.HistoricalVulnTrends, VulnTrendPoint{
-			Month: month,
-			Count: count,
-		})
-	}
-
-	sort.Slice(metrics.HistoricalVulnTrends, func(i, j int) bool {
-		return metrics.HistoricalVulnTrends[i].Month < metrics.HistoricalVulnTrends[j].Month
-	})
-
-	return metrics
-}
-
-func calculateProductMetrics(analyses []Analysis) ProductMetrics {
-	metrics := ProductMetrics{
-		MostAnalyzed: []ProductActivity{},
-	}
-
-	
-	products := loadProducts()
-	metrics.TotalConfigured = len(products)
-
-	
-	productActivity := make(map[string]int)
-	for _, analysis := range analyses {
-		if analysis.Meta.Status != "completed" {
-			continue
-		}
-
-		if product, ok := analysis.Meta.Params["product"].(string); ok {
-			productActivity[product]++
-		}
-	}
-
-	
-	for product, count := range productActivity {
-		metrics.MostAnalyzed = append(metrics.MostAnalyzed, ProductActivity{
-			Name:  product,
-			Count: count,
-		})
-	}
-
-	sort.Slice(metrics.MostAnalyzed, func(i, j int) bool {
-		return metrics.MostAnalyzed[i].Count > metrics.MostAnalyzed[j].Count
-	})
-
-	if len(metrics.MostAnalyzed) > 10 {
-		metrics.MostAnalyzed = metrics.MostAnalyzed[:10]
-	}
-
-	
-	if metrics.TotalConfigured > 0 {
-		totalAnalyses := 0
-		for _, activity := range productActivity {
-			totalAnalyses += activity
-		}
-		metrics.AvgCoverage = float64(totalAnalyses) / float64(metrics.TotalConfigured)
-	}
-
-	return metrics
-}
-
-func calculateSystemMetrics() SystemMetrics {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	return SystemMetrics{
-		MemoryMB:   m.Alloc / 1024 / 1024,
-		Goroutines: runtime.NumGoroutine(),
-	}
-}
-
-func calculateLanguageStats(analyses []Analysis) LanguageStats {
-	stats := LanguageStats{}
-
-	languagesByType := map[string]map[string]int{
-		"products": make(map[string]int),
-		"library":  make(map[string]int),
-		"folder":   make(map[string]int),
-	}
-
-	for _, analysis := range analyses {
-		if analysis.Meta.Status != "completed" {
-			continue
-		}
-
-		sourceType := analysis.Meta.Source
-		if sourceType == "library_auto" {
-			sourceType = "library"
-		}
-
-		
-		category := ""
-		if _, ok := analysis.Meta.Params["product"]; ok {
-			category = "products"
-		} else if sourceType == "library" {
-			category = "library"
-		} else {
-			category = "folder"
-		}
-
-		
-		for filename := range analysis.Results {
-			ext := strings.ToLower(filepath.Ext(filename))
-			lang := extensionToLanguage(ext)
-			if lang != "" {
-				languagesByType[category][lang]++
-			}
-		}
-	}
-
-	
-	for category, languages := range languagesByType {
-		var langStats []LanguageStat
-		for lang, count := range languages {
-			langStats = append(langStats, LanguageStat{
-				Language:  lang,
-				FileCount: count,
-			})
-		}
-
-		sort.Slice(langStats, func(i, j int) bool {
-			return langStats[i].FileCount > langStats[j].FileCount
-		})
-
-		if len(langStats) > 5 {
-			langStats = langStats[:5]
-		}
-
-		switch category {
-		case "products":
-			stats.Products = langStats
-		case "library":
-			stats.Library = langStats
-		case "folder":
-			stats.Folder = langStats
-		}
-	}
-
-	return stats
-}
-
-func extensionToLanguage(ext string) string {
-	languageMap := map[string]string{
+	extensionToLanguageMap = map[string]string{
 		".php":   "PHP",
 		".js":    "JavaScript",
 		".jsx":   "JavaScript",
@@ -944,14 +143,586 @@ func extensionToLanguage(ext string) string {
 		".vue":   "Vue",
 		".dart":  "Dart",
 	}
-
-	if lang, ok := languageMap[ext]; ok {
+)
+func GetDashboardStats() (*DashboardStats, error) {
+	dashboardCacheMutex.RLock()
+	cacheExists := dashboardCache != nil
+	cacheAge := time.Since(dashboardCacheTime)
+	isStale := cacheAge >= dashboardCacheTTL
+	dashboardCacheMutex.RUnlock()
+	if cacheExists {
+		dashboardCacheMutex.RLock()
+		cachedData := dashboardCache
+		dashboardCacheMutex.RUnlock()
+		if isStale {
+			isRefreshingLock.Lock()
+			if !isRefreshing {
+				isRefreshing = true
+				isRefreshingLock.Unlock()
+				go func() {
+					defer func() {
+						isRefreshingLock.Lock()
+						isRefreshing = false
+						isRefreshingLock.Unlock()
+					}()
+					calculateAndCacheDashboardStats()
+				}()
+			} else {
+				isRefreshingLock.Unlock()
+			}
+		}
+		return cachedData, nil
+	}
+	return calculateAndCacheDashboardStats()
+}
+func loadNewOrChangedAnalyses() ([]Analysis, bool) {
+	newAnalyses := []Analysis{}
+	hasChanges := false
+	files, err := os.ReadDir("saved_analyses")
+	if err != nil {
+		return newAnalyses, false
+	}
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".json") {
+			analysisID := strings.TrimSuffix(file.Name(), ".json")
+			filePath := filepath.Join("saved_analyses", file.Name())
+			info, err := os.Stat(filePath)
+			if err != nil {
+				continue
+			}
+			processedAnalysesMutex.RLock()
+			lastModTime, exists := processedAnalyses[analysisID]
+			processedAnalysesMutex.RUnlock()
+			if exists && !info.ModTime().After(lastModTime) {
+				continue
+			}
+			data, err := TrackedReadFile(filePath)
+			if err != nil {
+				continue
+			}
+			var analysis Analysis
+			if err := json.Unmarshal(data, &analysis); err != nil {
+				continue
+			}
+			analysis.ID = analysisID
+			newAnalyses = append(newAnalyses, analysis)
+			hasChanges = true
+			processedAnalysesMutex.Lock()
+			processedAnalyses[analysisID] = info.ModTime()
+			processedAnalysesMutex.Unlock()
+		}
+	}
+	if hasChanges {
+	}
+	return newAnalyses, hasChanges
+}
+func calculateAndCacheDashboardStats() (*DashboardStats, error) {
+	startTime := time.Now()
+	dashboardCacheMutex.RLock()
+	hasExistingCache := dashboardCache != nil
+	dashboardCacheMutex.RUnlock()
+	if hasExistingCache {
+		_, hasChanges := loadNewOrChangedAnalyses()
+		if !hasChanges {
+			dashboardCacheMutex.RLock()
+			cachedData := dashboardCache
+			dashboardCacheMutex.RUnlock()
+			return cachedData, nil
+		}
+	}
+	stats := &DashboardStats{
+		Timestamp: time.Now(),
+	}
+	analyses := loadAllAnalyses()
+	var wg sync.WaitGroup
+	wg.Add(10)
+	go func() {
+		defer wg.Done()
+		stats.AnalysisMetrics = calculateAnalysisMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.VulnerabilityMets = calculateVulnerabilityMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.CVEMetrics = calculateCVEMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.AIMetrics = calculateAIMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.RepositoryMetrics = calculateRepositoryMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.FileMetrics = calculateFileMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.CacheMetrics = calculateCacheMetrics()
+	}()
+	go func() {
+		defer wg.Done()
+		stats.TrendMetrics = calculateTrendMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.ProductMetrics = calculateProductMetrics(analyses)
+	}()
+	go func() {
+		defer wg.Done()
+		stats.SystemMetrics = calculateSystemMetrics()
+	}()
+	wg.Wait()
+	stats.LanguageStats = calculateLanguageStats(analyses)
+	dashboardCacheMutex.Lock()
+	dashboardCache = stats
+	dashboardCacheTime = time.Now()
+	dashboardCacheMutex.Unlock()
+	_ = time.Since(startTime)
+	return stats, nil
+}
+func calculateAnalysisMetrics(analyses []Analysis) AnalysisMetrics {
+	metrics := AnalysisMetrics{}
+	totalVulns := 0
+	vulnAnalyses := 0
+	for _, analysis := range analyses {
+		if analysis.Meta.Status == "completed" {
+			metrics.TotalCompleted++
+			vulnCount := countVulnerabilities(analysis.Results)
+			if vulnCount > 0 {
+				vulnAnalyses++
+				totalVulns += vulnCount
+			}
+		} else if analysis.Meta.Status == "running" || analysis.Meta.Status == "in_progress" || analysis.Meta.Status == "analyzing" {
+			metrics.ActiveRunning++
+		}
+	}
+	metrics.TotalVulns = totalVulns
+	if metrics.TotalCompleted > 0 {
+		metrics.AvgVulnsPerAnalysis = float64(totalVulns) / float64(metrics.TotalCompleted)
+		metrics.DetectionRate = (float64(vulnAnalyses) / float64(metrics.TotalCompleted)) * 100
+	}
+	return metrics
+}
+func calculateVulnerabilityMetrics(analyses []Analysis) VulnerabilityMetrics {
+	metrics := VulnerabilityMetrics{
+		ByProduct: make(map[string]int),
+	}
+	var vulnTypesMutex sync.Mutex
+	vulnTypes := make(map[string]int)
+	var wg sync.WaitGroup
+	resultsChan := make(chan struct {
+		productName string
+		vulnCount   int
+		cwes        []string
+	}, len(analyses))
+	semaphore := make(chan struct{}, 10)
+	for _, analysis := range analyses {
+		if analysis.Meta.Status != "completed" {
+			continue
+		}
+		wg.Add(1)
+		go func(analysis Analysis) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			productName := ""
+			if product, ok := analysis.Meta.Params["product"].(string); ok {
+				productName = product
+			} else if repoName, ok := analysis.Meta.Params["repo_name"].(string); ok {
+				productName = repoName
+			}
+			vulnCount := countVulnerabilities(analysis.Results)
+			var cwes []string
+			for _, result := range analysis.Results {
+				if result.AIResponse != "" {
+					cwes = append(cwes, extractCWEsFromAIResponse(result.AIResponse)...)
+				}
+			}
+			resultsChan <- struct {
+				productName string
+				vulnCount   int
+				cwes        []string
+			}{productName, vulnCount, cwes}
+		}(analysis)
+	}
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+	for result := range resultsChan {
+		if result.productName != "" && result.vulnCount > 0 {
+			metrics.ByProduct[result.productName] += result.vulnCount
+		}
+		vulnTypesMutex.Lock()
+		for _, cwe := range result.cwes {
+			vulnTypes[cwe]++
+		}
+		vulnTypesMutex.Unlock()
+	}
+	for vType, count := range vulnTypes {
+		metrics.TopVulnerabilities = append(metrics.TopVulnerabilities, VulnerabilityType{
+			Type:  vType,
+			Count: count,
+		})
+	}
+	sort.Slice(metrics.TopVulnerabilities, func(i, j int) bool {
+		return metrics.TopVulnerabilities[i].Count > metrics.TopVulnerabilities[j].Count
+	})
+	if len(metrics.TopVulnerabilities) > 10 {
+		metrics.TopVulnerabilities = metrics.TopVulnerabilities[:10]
+	}
+	return metrics
+}
+func extractCWEsFromAIResponse(aiResponse string) []string {
+	cwes := []string{}
+	found := make(map[string]bool)
+	matches := cwePatternRegex.FindAllStringSubmatch(aiResponse, -1)
+	for _, match := range matches {
+		if len(match) >= 3 {
+			cweNumber := match[1]
+			description := strings.TrimSpace(match[2])
+			repeatPattern := " - CWE-" + cweNumber
+			if strings.HasSuffix(description, repeatPattern) {
+				description = strings.TrimSpace(strings.TrimSuffix(description, repeatPattern))
+			}
+			parts := strings.Split(description, " - ")
+			if len(parts) > 1 {
+				lastPart := parts[len(parts)-1]
+				if len(lastPart) < 30 && !strings.ContainsAny(lastPart, "()'/") {
+					if !strings.Contains(lastPart, " ") || strings.HasPrefix(lastPart, "apps/") || strings.HasPrefix(lastPart, "packages/") {
+						description = strings.TrimSpace(strings.Join(parts[:len(parts)-1], " - "))
+					}
+				}
+			}
+			if len(description) < 3 {
+				continue
+			}
+			cweEntry := "CWE-" + cweNumber + ": " + description
+			if !found[cweEntry] {
+				cwes = append(cwes, cweEntry)
+				found[cweEntry] = true
+			}
+		}
+	}
+	return cwes
+}
+func calculateCVEMetrics(analyses []Analysis) CVEMetrics {
+	metrics := CVEMetrics{}
+	analysesWithMatches := 0
+	totalAnalysesWithCVEChecks := 0
+	for _, analysis := range analyses {
+		if analysis.Meta.Status != "completed" {
+			continue
+		}
+		hasAnyCVECheck := false
+		hasAnyMatch := false
+		for _, result := range analysis.Results {
+			if result.CVEMatches != nil && len(result.CVEMatches) > 0 {
+				hasAnyCVECheck = true
+				for _, match := range result.CVEMatches {
+					if match.Result == "Yes" {
+						metrics.TotalMatches++
+						hasAnyMatch = true
+					}
+				}
+			}
+		}
+		if hasAnyCVECheck {
+			totalAnalysesWithCVEChecks++
+			if hasAnyMatch {
+				analysesWithMatches++
+			}
+		}
+	}
+	if totalAnalysesWithCVEChecks > 0 {
+		metrics.MatchRate = (float64(analysesWithMatches) / float64(totalAnalysesWithCVEChecks)) * 100
+	}
+	return metrics
+}
+func calculateAIMetrics(analyses []Analysis) AIMetrics {
+	metrics := AIMetrics{
+		AvgAnalysisTimeByScale: make(map[string]int),
+		MaxThreads:             *aiThreads,
+	}
+	timeBuckets := map[string][]float64{
+		"10_files":   {},
+		"100_files":  {},
+		"1000_files": {},
+	}
+	confidenceStats := make(map[string]int)
+	for _, analysis := range analyses {
+		if analysis.Meta.Status != "completed" {
+			continue
+		}
+		fileCount := len(analysis.Results)
+		if analysis.Meta.FinishedAt != nil {
+			duration := analysis.Meta.FinishedAt.Sub(analysis.Meta.CreatedAt).Seconds()
+			if duration > 0 {
+				
+				if fileCount <= 10 {
+					timeBuckets["10_files"] = append(timeBuckets["10_files"], duration)
+				} else if fileCount <= 100 {
+					timeBuckets["100_files"] = append(timeBuckets["100_files"], duration)
+				} else if fileCount <= 1000 {
+					timeBuckets["1000_files"] = append(timeBuckets["1000_files"], duration)
+				}
+			}
+		}
+		for _, result := range analysis.Results {
+			status := strings.ToLower(result.VulnerabilityStatus)
+			if strings.Contains(status, "yes") || strings.Contains(status, "vulnerabilities") {
+				confidenceStats["confirmed"]++
+			} else if strings.Contains(status, "not sure") {
+				confidenceStats["uncertain"]++
+			}
+		}
+	}
+	for bucket, times := range timeBuckets {
+		if len(times) > 0 {
+			var sum float64
+			for _, t := range times {
+				sum += t
+			}
+			metrics.AvgAnalysisTimeByScale[bucket] = int(sum / float64(len(times)))
+		}
+	}
+	metrics.ConfidenceLevels = ConfidenceLevels{
+		Confirmed: confidenceStats["confirmed"],
+		Uncertain: confidenceStats["uncertain"],
+	}
+	metrics.ActiveThreads = getActiveAIThreads()
+	return metrics
+}
+func calculateRepositoryMetrics(analyses []Analysis) RepositoryMetrics {
+	metrics := RepositoryMetrics{
+		MostActiveRepos: []RepositoryActivity{},
+	}
+	library := loadLibrary()
+	metrics.MonitoredLibraries = len(library)
+	for _, repo := range library {
+		if repo.AutoScan {
+			metrics.AutoScanEnabled++
+		}
+		if repo.LastChecked != nil {
+			metrics.VersionChecks++
+		}
+	}
+	repoActivity := make(map[string]int)
+	for _, analysis := range analyses {
+		if analysis.Meta.Status != "completed" {
+			continue
+		}
+		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" {
+			if repoName, ok := analysis.Meta.Params["repo_name"].(string); ok {
+				repoActivity[repoName]++
+			} else if repoURL, ok := analysis.Meta.Params["repo_url"].(string); ok {
+				repoActivity[repoURL]++
+			}
+		}
+	}
+	for repo, count := range repoActivity {
+		metrics.MostActiveRepos = append(metrics.MostActiveRepos, RepositoryActivity{
+			Name:  repo,
+			Count: count,
+		})
+	}
+	sort.Slice(metrics.MostActiveRepos, func(i, j int) bool {
+		return metrics.MostActiveRepos[i].Count > metrics.MostActiveRepos[j].Count
+	})
+	if len(metrics.MostActiveRepos) > 10 {
+		metrics.MostActiveRepos = metrics.MostActiveRepos[:10]
+	}
+	metrics.NewVersionsDetected = 0
+	return metrics
+}
+func calculateFileMetrics(analyses []Analysis) FileMetrics {
+	metrics := FileMetrics{}
+	for _, analysis := range analyses {
+		if analysis.Meta.Status == "completed" {
+			metrics.TotalFilesAnalyzed += len(analysis.Results)
+		}
+	}
+	return metrics
+}
+func calculateCacheMetrics() CacheMetricsStats {
+	metrics := CacheMetricsStats{}
+	count, size, err := getCacheStats()
+	if err == nil {
+		metrics.CachedVersions = count
+		metrics.SizeBytes = size
+	}
+	hits, misses := getCacheHitStats()
+	total := hits + misses
+	if total > 0 {
+		metrics.HitRate = (float64(hits) / float64(total)) * 100
+	}
+	metrics.AvgDownloadTime = getAvgDownloadTime()
+	if metrics.HitRate > 0 && metrics.SizeBytes > 0 {
+		avgSize := float64(metrics.SizeBytes) / float64(metrics.CachedVersions)
+		metrics.DiskSpaceSaved = int64(float64(hits) * avgSize)
+	}
+	return metrics
+}
+func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
+	metrics := TrendMetrics{
+		AnalysesPerDay:       make(map[string]int),
+		AvgTimeByType:        make(map[string]float64),
+		HistoricalVulnTrends: []VulnTrendPoint{},
+	}
+	timingByType := make(map[string][]float64)
+	vulnsByMonth := make(map[string]int)
+	for _, analysis := range analyses {
+		if analysis.Meta.Status != "completed" {
+			continue
+		}
+		dayKey := analysis.Meta.CreatedAt.Format("2006-01-02")
+		metrics.AnalysesPerDay[dayKey]++
+		analysisPath := filepath.Join("saved_analyses", analysis.ID+".json")
+		if info, err := os.Stat(analysisPath); err == nil {
+			duration := time.Since(info.ModTime()).Seconds()
+			sourceType := analysis.Meta.Source
+			if sourceType == "" {
+				sourceType = "unknown"
+			}
+			timingByType[sourceType] = append(timingByType[sourceType], duration)
+		}
+		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" {
+			monthKey := analysis.Meta.CreatedAt.Format("2006-01")
+			vulnCount := countVulnerabilities(analysis.Results)
+			vulnsByMonth[monthKey] += vulnCount
+		}
+	}
+	for sourceType, times := range timingByType {
+		if len(times) > 0 {
+			var sum float64
+			for _, t := range times {
+				sum += t
+			}
+			metrics.AvgTimeByType[sourceType] = sum / float64(len(times))
+		}
+	}
+	for month, count := range vulnsByMonth {
+		metrics.HistoricalVulnTrends = append(metrics.HistoricalVulnTrends, VulnTrendPoint{
+			Month: month,
+			Count: count,
+		})
+	}
+	sort.Slice(metrics.HistoricalVulnTrends, func(i, j int) bool {
+		return metrics.HistoricalVulnTrends[i].Month < metrics.HistoricalVulnTrends[j].Month
+	})
+	return metrics
+}
+func calculateProductMetrics(analyses []Analysis) ProductMetrics {
+	metrics := ProductMetrics{
+		MostAnalyzed: []ProductActivity{},
+	}
+	products := loadProducts()
+	metrics.TotalConfigured = len(products)
+	productActivity := make(map[string]int)
+	for _, analysis := range analyses {
+		if analysis.Meta.Status != "completed" {
+			continue
+		}
+		if product, ok := analysis.Meta.Params["product"].(string); ok {
+			productActivity[product]++
+		}
+	}
+	for product, count := range productActivity {
+		metrics.MostAnalyzed = append(metrics.MostAnalyzed, ProductActivity{
+			Name:  product,
+			Count: count,
+		})
+	}
+	sort.Slice(metrics.MostAnalyzed, func(i, j int) bool {
+		return metrics.MostAnalyzed[i].Count > metrics.MostAnalyzed[j].Count
+	})
+	if len(metrics.MostAnalyzed) > 10 {
+		metrics.MostAnalyzed = metrics.MostAnalyzed[:10]
+	}
+	if metrics.TotalConfigured > 0 {
+		totalAnalyses := 0
+		for _, activity := range productActivity {
+			totalAnalyses += activity
+		}
+		metrics.AvgCoverage = float64(totalAnalyses) / float64(metrics.TotalConfigured)
+	}
+	return metrics
+}
+func calculateSystemMetrics() SystemMetrics {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return SystemMetrics{
+		MemoryMB:   m.Alloc / 1024 / 1024,
+		Goroutines: runtime.NumGoroutine(),
+	}
+}
+func calculateLanguageStats(analyses []Analysis) LanguageStats {
+	stats := LanguageStats{}
+	languagesByType := map[string]map[string]int{
+		"products": make(map[string]int),
+		"library":  make(map[string]int),
+		"folder":   make(map[string]int),
+	}
+	for _, analysis := range analyses {
+		if analysis.Meta.Status != "completed" {
+			continue
+		}
+		sourceType := analysis.Meta.Source
+		if sourceType == "library_auto" {
+			sourceType = "library"
+		}
+		category := ""
+		if _, ok := analysis.Meta.Params["product"]; ok {
+			category = "products"
+		} else if sourceType == "library" {
+			category = "library"
+		} else {
+			category = "folder"
+		}
+		for filename := range analysis.Results {
+			ext := strings.ToLower(filepath.Ext(filename))
+			lang := extensionToLanguage(ext)
+			if lang != "" {
+				languagesByType[category][lang]++
+			}
+		}
+	}
+	for category, languages := range languagesByType {
+		var langStats []LanguageStat
+		for lang, count := range languages {
+			langStats = append(langStats, LanguageStat{
+				Language:  lang,
+				FileCount: count,
+			})
+		}
+		sort.Slice(langStats, func(i, j int) bool {
+			return langStats[i].FileCount > langStats[j].FileCount
+		})
+		if len(langStats) > 5 {
+			langStats = langStats[:5]
+		}
+		switch category {
+		case "products":
+			stats.Products = langStats
+		case "library":
+			stats.Library = langStats
+		case "folder":
+			stats.Folder = langStats
+		}
+	}
+	return stats
+}
+func extensionToLanguage(ext string) string {
+	if lang, ok := extensionToLanguageMap[ext]; ok {
 		return lang
 	}
 	return ""
 }
-
-
 func InvalidateDashboardCache() {
 	dashboardCacheMutex.Lock()
 	dashboardCache = nil
