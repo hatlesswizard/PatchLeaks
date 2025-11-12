@@ -1,17 +1,13 @@
 package main
-
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 )
-
 type FunctionDefinition struct {
 	Name      string `json:"name"`
 	Language  string `json:"language"`
@@ -21,7 +17,6 @@ type FunctionDefinition struct {
 	IsMethod  bool   `json:"is_method"`
 	ClassName string `json:"class_name,omitempty"`
 }
-
 func DetectLanguage(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
@@ -51,30 +46,21 @@ func DetectLanguage(filePath string) string {
 		return "unknown"
 	}
 }
-
 func ExtractFunctionContext(filePath, diffContent string, includeContext bool, repoPath string) (string, error) {
 	if !includeContext {
 		return "", nil
 	}
-	startTime := time.Now()
 	language := DetectLanguage(filePath)
 	if language == "unknown" {
-		log.Printf("[CONTEXT] Unknown language for file: %s, skipping context extraction", filePath)
 		return "", nil
 	}
 	functionCalls := extractFunctionCallsWithTreeSitter(filePath, diffContent, language)
 	if len(functionCalls) == 0 {
-		log.Printf("[CONTEXT] No function calls found in diff for %s", filePath)
 		return "", nil
 	}
-	log.Printf("[CONTEXT] Found %d function calls in %s (repo: %s)", len(functionCalls), filepath.Base(filePath), filepath.Base(repoPath))
-	
 	var lazyIndex *LazyFunctionIndex
 	if repoPath != "" {
-		indexStart := time.Now()
 		lazyIndex = NewLazyFunctionIndex(repoPath)
-		indexDuration := time.Since(indexStart)
-		log.Printf("[CONTEXT] Created lazy index for %s in %v", filepath.Base(repoPath), indexDuration)
 	}
 	builtinDetector := GetBuiltinDetector()
 	type lookupTask struct {
@@ -84,16 +70,13 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 	var tasks []lookupTask
 	for i, funcName := range functionCalls {
 		if builtinDetector.IsBuiltin(language, funcName) {
-			log.Printf("[CONTEXT] Function %s.%s is a built-in, skipping context extraction", language, funcName)
 			continue
 		}
 		tasks = append(tasks, lookupTask{funcName: funcName, index: i})
 	}
 	if len(tasks) == 0 {
-		log.Printf("[CONTEXT] All %d functions were built-ins, no lookups needed", len(functionCalls))
 		return "", nil
 	}
-	log.Printf("[CONTEXT] Need to lookup %d non-builtin functions", len(tasks))
 	type lookupResult struct {
 		def   *FunctionDefinition
 		err   error
@@ -101,36 +84,29 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 	}
 	resultChan := make(chan lookupResult, len(tasks))
 	taskChan := make(chan lookupTask, len(tasks))
-	
-	
 	numWorkers := runtime.GOMAXPROCS(0)
-	if numWorkers > 4 {
+	if numWorkers > 10000 {
 		numWorkers = 4
 	}
-	
 	var wg sync.WaitGroup
-	
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for t := range taskChan {
-				// Yield to CPU throttler
+				
 				ThrottleYield()
 				def, err := lookupFunctionDefinitionLazy(language, t.funcName, filePath, repoPath, lazyIndex)
 				resultChan <- lookupResult{def: def, err: err, index: t.index}
 			}
 		}()
 	}
-	
-	
 	go func() {
 		for _, task := range tasks {
 			taskChan <- task
 		}
 		close(taskChan)
 	}()
-	
 	go func() {
 		wg.Wait()
 		close(resultChan)
@@ -138,8 +114,6 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 	results := make([]*FunctionDefinition, len(functionCalls))
 	for result := range resultChan {
 		if result.err != nil {
-			log.Printf("Could not find definition for %s.%s: %v (may be external library)",
-				language, functionCalls[result.index], result.err)
 			continue
 		}
 		if result.def != nil {
@@ -156,12 +130,8 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 		return "", nil
 	}
 	context := formatFunctionContext(definitions)
-	duration := time.Since(startTime)
-	log.Printf("[CONTEXT] Extracted context for %s: %d/%d functions found in %v", 
-		filepath.Base(filePath), len(definitions), len(tasks), duration)
 	return context, nil
 }
-
 func identifyChangedFunctionsFromDiff(filePath, diffContent, language string) []string {
 	var allFuncs []string
 	var err error
@@ -211,11 +181,9 @@ func identifyChangedFunctionsFromDiff(filePath, diffContent, language string) []
 	case "typescript":
 		allFuncs, err = TSListTSFunctions(filePath)
 	default:
-		log.Printf("Unsupported language for tree-sitter function listing: %s", language)
 		return []string{}
 	}
 	if err != nil {
-		log.Printf("Error listing functions with tree-sitter: %v", err)
 		return []string{}
 	}
 	var changedFuncs []string
@@ -236,15 +204,12 @@ func identifyChangedFunctionsFromDiff(filePath, diffContent, language string) []
 	}
 	return changedFuncs
 }
-
 func extractFunctionCallsWithTreeSitter(filePath, diffContent, language string) []string {
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		log.Printf("File does not exist: %s, falling back to regex", filePath)
 		return extractFunctionCallsFromDiff(diffContent, language)
 	}
 	changedFuncs := identifyChangedFunctionsFromDiff(filePath, diffContent, language)
 	if len(changedFuncs) == 0 {
-		log.Printf("No changed functions identified in diff, falling back to regex")
 		return extractFunctionCallsFromDiff(diffContent, language)
 	}
 	var allCalls []string
@@ -279,11 +244,9 @@ func extractFunctionCallsWithTreeSitter(filePath, diffContent, language string) 
 		case "typescript":
 			calls, _, err = TSListCalledFunctionsTS(filePath, funcName)
 		default:
-			log.Printf("Unsupported language for tree-sitter extraction: %s, falling back to regex", language)
 			return extractFunctionCallsFromDiff(diffContent, language)
 		}
 		if err != nil {
-			log.Printf("Could not extract calls from %s.%s: %v", language, funcName, err)
 			continue
 		}
 		for _, call := range calls {
@@ -294,12 +257,10 @@ func extractFunctionCallsWithTreeSitter(filePath, diffContent, language string) 
 		}
 	}
 	if len(allCalls) == 0 {
-		log.Printf("No function calls found via tree-sitter, falling back to regex")
 		return extractFunctionCallsFromDiff(diffContent, language)
 	}
 	return allCalls
 }
-
 func extractFunctionCallsFromDiff(diffContent, language string) []string {
 	var calls []string
 	seen := make(map[string]bool)
@@ -338,8 +299,6 @@ func extractFunctionCallsFromDiff(diffContent, language string) []string {
 	}
 	return calls
 }
-
-
 func lookupFunctionDefinitionLazy(language, funcName, currentFile, repoPath string, lazyIndex *LazyFunctionIndex) (*FunctionDefinition, error) {
 	if lazyIndex != nil {
 		def, err := lazyIndex.FindFunction(language, funcName)
@@ -349,7 +308,6 @@ func lookupFunctionDefinitionLazy(language, funcName, currentFile, repoPath stri
 	}
 	return nil, fmt.Errorf("function %s not found", funcName)
 }
-
 func formatFunctionContext(definitions []FunctionDefinition) string {
 	if len(definitions) == 0 {
 		return ""
