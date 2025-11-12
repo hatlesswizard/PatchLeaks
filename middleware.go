@@ -1,5 +1,4 @@
 package main
-
 import (
 	"encoding/base64"
 	"net/http"
@@ -7,17 +6,14 @@ import (
 	"sync"
 	"time"
 )
-
 type rateLimiter struct {
 	visitors map[string]*visitor
 	mu       sync.RWMutex
 }
-
 type visitor struct {
 	lastSeen time.Time
 	count    int
 }
-
 var (
 	limiter = &rateLimiter{
 		visitors: make(map[string]*visitor),
@@ -25,11 +21,9 @@ var (
 	requestsPerMinute = 50
 	cleanupInterval   = time.Minute * 5
 )
-
 func init() {
 	go cleanupVisitors()
 }
-
 func basicAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -60,13 +54,11 @@ func basicAuthMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 func requestAuth(w http.ResponseWriter) {
 	w.Header().Set("WWW-Authenticate", `Basic realm="Login Required"`)
 	w.WriteHeader(http.StatusUnauthorized)
 	w.Write([]byte("Authentication required"))
 }
-
 func rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := getIP(r)
@@ -99,7 +91,6 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 func getIP(r *http.Request) string {
 	forwarded := r.Header.Get("X-Forwarded-For")
 	if forwarded != "" {
@@ -112,7 +103,6 @@ func getIP(r *http.Request) string {
 	}
 	return ip
 }
-
 func cleanupVisitors() {
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
