@@ -1,12 +1,10 @@
 package main
-
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"html/template"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,9 +13,7 @@ import (
 	"strings"
 	"time"
 )
-
 var templates *template.Template
-
 func init() {
 	funcMap := template.FuncMap{
 		"hasPrefix": strings.HasPrefix,
@@ -90,9 +86,6 @@ func init() {
 			return string(b)
 		},
 	}
-	log.Println("========================================")
-	log.Println("Parsing templates...")
-	log.Println("========================================")
 	templates = template.New("").Funcs(funcMap)
 	templateFiles := []string{
 		"templates/index.html",
@@ -110,33 +103,19 @@ func init() {
 		_, err := templates.ParseFiles(tmplFile)
 		if err != nil {
 			parseErrors = append(parseErrors, fmt.Sprintf("  [ERROR] %s: %v", tmplFile, err))
-			log.Printf("ERROR parsing %s: %v", tmplFile, err)
 		} else {
-			log.Printf("  %s parsed successfully", tmplFile)
 		}
 	}
 	if len(parseErrors) > 0 {
-		log.Println("========================================")
-		log.Println("Template Parse Errors:")
-		log.Println("========================================")
-		for _, errMsg := range parseErrors {
-			log.Println(errMsg)
+		for _, _ = range parseErrors {
 		}
-		log.Println("========================================")
-		log.Printf("Templates will need to be converted from Jinja2 to Go syntax")
-		log.Printf("See TEMPLATE_EXAMPLES.md for conversion guide")
 		templates = nil
 	} else {
-		log.Println("========================================")
-		log.Println("All templates parsed successfully!")
-		log.Println("========================================")
 	}
 }
-
 func templatesLoaded() bool {
 	return templates != nil
 }
-
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if !templatesLoaded() {
 		http.Error(w, `Templates not loaded. Please convert templates from Jinja2 to Go syntax.
@@ -149,7 +128,6 @@ Example: Replace {% for item in items %} with {{range .Items}}`, http.StatusInte
 		return
 	}
 }
-
 func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	analysisID := vars["id"]
@@ -158,7 +136,7 @@ func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
-	data, err := os.ReadFile(analysisPath)
+	data, err := TrackedReadFile(analysisPath)
 	if err != nil {
 		http.Error(w, "Analysis not found", http.StatusNotFound)
 		return
@@ -224,10 +202,8 @@ func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		Status:             analysis.Meta.Status,
 	}
 	if err := templates.ExecuteTemplate(w, "analysis.html", templateData); err != nil {
-		log.Printf("Error rendering analysis.html: %v", err)
 	}
 }
-
 func saveAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	var requestData map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
@@ -284,13 +260,12 @@ func saveAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	data, _ := json.MarshalIndent(analysis, "", "  ")
-	if err := os.WriteFile(analysisPath, data, 0644); err != nil {
+	if err := TrackedWriteFile(analysisPath, data, 0644); err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save analysis"})
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]string{"id": analysisID})
 }
-
 func deleteAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	analysisID := vars["id"]
@@ -300,11 +275,9 @@ func deleteAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	if err := os.Remove(analysisPath); err != nil {
-		log.Printf("Error deleting analysis %s: %v", analysisID, err)
 	}
 	http.Redirect(w, r, "/reports", http.StatusSeeOther)
 }
-
 func productsHandler(w http.ResponseWriter, r *http.Request) {
 	productsData := loadProducts()
 	productsList := make([]string, 0, len(productsData))
@@ -365,12 +338,10 @@ func productsHandler(w http.ResponseWriter, r *http.Request) {
 		Error:           "",
 	}
 	if err := templates.ExecuteTemplate(w, "products.html", data); err != nil {
-		log.Printf("Error rendering products.html: %v", err)
 		http.Error(w, "Error rendering page", http.StatusInternalServerError)
 		return
 	}
 }
-
 func folderHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -419,10 +390,8 @@ func folderHandler(w http.ResponseWriter, r *http.Request) {
 		Error:           "",
 	}
 	if err := templates.ExecuteTemplate(w, "folder.html", data); err != nil {
-		log.Printf("Error rendering folder.html: %v", err)
 	}
 }
-
 func reportsHandler(w http.ResponseWriter, r *http.Request) {
 	reports := loadAllAnalyses()
 	for i := range reports {
@@ -436,10 +405,8 @@ func reportsHandler(w http.ResponseWriter, r *http.Request) {
 		FlashMessages: []FlashMessage{},
 	}
 	if err := templates.ExecuteTemplate(w, "reports.html", data); err != nil {
-		log.Printf("Error rendering reports.html: %v", err)
 	}
 }
-
 func manageProductsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -492,10 +459,8 @@ func manageProductsHandler(w http.ResponseWriter, r *http.Request) {
 		FlashMessages: []FlashMessage{},
 	}
 	if err := templates.ExecuteTemplate(w, "manage_products.html", data); err != nil {
-		log.Printf("Error rendering manage_products.html: %v", err)
 	}
 }
-
 func deleteProductHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	productName := validateInput(vars["name"], 100)
@@ -508,35 +473,25 @@ func deleteProductHandler(w http.ResponseWriter, r *http.Request) {
 	saveProducts(products)
 	http.Redirect(w, r, "/manage-products", http.StatusSeeOther)
 }
-
 func getVersionsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	product := validateInput(vars["product"], 100)
-	log.Printf("DEBUG: get_versions called for product: %s", product)
 	if product == "" {
-		log.Printf("DEBUG: Empty product name")
 		respondJSON(w, http.StatusOK, []string{})
 		return
 	}
 	products := loadProducts()
-	log.Printf("DEBUG: Loaded %d products", len(products))
 	if productData, exists := products[product]; exists {
-		log.Printf("DEBUG: Found product %s with repo: %s", product, productData.RepoURL)
 		if validateURL(productData.RepoURL) {
 			versions := getGitHubVersions(productData.RepoURL)
-			log.Printf("DEBUG: Fetched %d versions for %s", len(versions), product)
 			respondJSON(w, http.StatusOK, versions)
 			return
 		} else {
-			log.Printf("DEBUG: Invalid URL for product %s: %s", product, productData.RepoURL)
 		}
 	} else {
-		log.Printf("DEBUG: Product %s not found in products list", product)
-		log.Printf("DEBUG: Available products: %v", products)
 	}
 	respondJSON(w, http.StatusOK, []string{})
 }
-
 func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -553,19 +508,18 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		} else if numCtx > 32768 {
 			numCtx = 32768
 		}
-		// Create new config struct (don't use := to avoid shadowing global config)
-		// Start with existing parameters to preserve settings not in the form
+		
+		
 		newParameters := make(map[string]interface{})
 		if config != nil && config.Parameters != nil {
 			for k, v := range config.Parameters {
 				newParameters[k] = v
 			}
 		}
-		// Update with form values
+		
 		newParameters["temperature"] = temperature
 		newParameters["num_ctx"] = numCtx
 		newParameters["enable_context_analysis"] = r.FormValue("enable_context_analysis") == "on"
-		
 		newConfig := &Config{
 			Service: aiService,
 			Ollama: map[string]interface{}{
@@ -598,15 +552,12 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 		if err := newConfig.Save(); err != nil {
-			log.Printf("Error saving config: %v", err)
 		} else {
-			// Reload and update the global config variable
+			
 			reloadedConfig, err := LoadConfig()
 			if err != nil {
-				log.Printf("Error reloading config: %v", err)
 			} else {
 				config = reloadedConfig
-				log.Printf("AI config reloaded successfully - changes are now active")
 			}
 		}
 		http.Redirect(w, r, "/ai-settings", http.StatusSeeOther)
@@ -620,10 +571,8 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		FlashMessages: []FlashMessage{},
 	}
 	if err := templates.ExecuteTemplate(w, "ai_settings.html", data); err != nil {
-		log.Printf("Error rendering ai_settings.html: %v", err)
 	}
 }
-
 func resetPromptsHandler(w http.ResponseWriter, r *http.Request) {
 	if config != nil {
 		config.Prompts = DefaultPrompts()
@@ -631,7 +580,6 @@ func resetPromptsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/ai-settings", http.StatusSeeOther)
 }
-
 func libraryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
@@ -656,10 +604,8 @@ func libraryHandler(w http.ResponseWriter, r *http.Request) {
 		FlashMessages: []FlashMessage{},
 	}
 	if err := templates.ExecuteTemplate(w, "library.html", data); err != nil {
-		log.Printf("Error rendering library.html: %v", err)
 	}
 }
-
 func deleteLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoID := vars["id"]
@@ -668,7 +614,6 @@ func deleteLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
-
 func toggleLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	repoID := vars["id"]
@@ -677,25 +622,20 @@ func toggleLibraryRepoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
-
 func checkVersionsNowHandler(w http.ResponseWriter, r *http.Request) {
 	go checkForNewVersions()
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
-
 func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	if !templatesLoaded() {
 		http.Error(w, "Templates not loaded", http.StatusInternalServerError)
 		return
 	}
-
 	stats, err := GetDashboardStats()
 	if err != nil {
-		log.Printf("Error getting dashboard stats: %v", err)
 		http.Error(w, "Error loading dashboard", http.StatusInternalServerError)
 		return
 	}
-
 	data := struct {
 		Stats         DashboardStats
 		FlashMessages []FlashMessage
@@ -703,34 +643,25 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		Stats:         *stats,
 		FlashMessages: []FlashMessage{},
 	}
-
 	if err := templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
-		
 		if err.Error() != "write tcp" && !strings.Contains(err.Error(), "broken pipe") {
-			log.Printf("Error rendering dashboard.html: %v", err)
 		}
-		
 		return
 	}
 }
-
 func dashboardAPIHandler(w http.ResponseWriter, r *http.Request) {
 	stats, err := GetDashboardStats()
 	if err != nil {
-		log.Printf("Error getting dashboard stats: %v", err)
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load stats"})
 		return
 	}
-
 	respondJSON(w, http.StatusOK, stats)
 }
-
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(data)
 }
-
 func isValidUUID(u string) bool {
 	_, err := uuid.Parse(u)
 	return err == nil
