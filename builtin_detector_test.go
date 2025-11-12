@@ -1,9 +1,7 @@
 package main
-
 import (
 	"testing"
 )
-
 func TestBuiltinDetector_PHP(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -28,7 +26,6 @@ func TestBuiltinDetector_PHP(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_JavaScript(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -53,7 +50,6 @@ func TestBuiltinDetector_JavaScript(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_TypeScript(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -74,7 +70,6 @@ func TestBuiltinDetector_TypeScript(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_Python(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -99,7 +94,6 @@ func TestBuiltinDetector_Python(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_C(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -125,7 +119,6 @@ func TestBuiltinDetector_C(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_Cpp(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -150,7 +143,6 @@ func TestBuiltinDetector_Cpp(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_CSharp(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -175,7 +167,6 @@ func TestBuiltinDetector_CSharp(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_Go(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -200,7 +191,6 @@ func TestBuiltinDetector_Go(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_Java(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -225,7 +215,6 @@ func TestBuiltinDetector_Java(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_Ruby(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -250,7 +239,6 @@ func TestBuiltinDetector_Ruby(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_Rust(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -276,7 +264,6 @@ func TestBuiltinDetector_Rust(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_UnknownLanguage(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -297,7 +284,6 @@ func TestBuiltinDetector_UnknownLanguage(t *testing.T) {
 		})
 	}
 }
-
 func TestBuiltinDetector_InitializationOnce(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
@@ -336,7 +322,6 @@ func TestBuiltinDetector_InitializationOnce(t *testing.T) {
 		t.Error("Detector should be marked as initialized")
 	}
 }
-
 func TestGetBuiltinDetector_Singleton(t *testing.T) {
 	bd1 := GetBuiltinDetector()
 	bd2 := GetBuiltinDetector()
@@ -344,7 +329,6 @@ func TestGetBuiltinDetector_Singleton(t *testing.T) {
 		t.Error("GetBuiltinDetector should return the same instance (singleton)")
 	}
 }
-
 func TestBuiltinDetector_SpecialCharacters(t *testing.T) {
 	bd := NewBuiltinDetector()
 	bd.initialize()
