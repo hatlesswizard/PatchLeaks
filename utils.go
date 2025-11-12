@@ -1,11 +1,9 @@
 package main
-
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,12 +14,10 @@ import (
 	"sync"
 	"time"
 )
-
 const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:137.0) Gecko/20100101 Firefox/137.0"
 )
 const recentTagLimit = 15
-
 func validateInput(input interface{}, maxLength int) string {
 	str, ok := input.(string)
 	if !ok || str == "" {
@@ -34,7 +30,6 @@ func validateInput(input interface{}, maxLength int) string {
 	}
 	return strings.TrimSpace(clean)
 }
-
 func validatePrompt(input string, maxLength int) string {
 	if input == "" {
 		return ""
@@ -46,14 +41,12 @@ func validatePrompt(input string, maxLength int) string {
 	}
 	return strings.TrimSpace(clean)
 }
-
 func validateURL(url string) bool {
 	if url == "" {
 		return false
 	}
 	return strings.HasPrefix(url, "https://github.com/") || strings.HasPrefix(url, "http://github.com/")
 }
-
 func validateVersion(version string) bool {
 	if version == "" {
 		return false
@@ -61,9 +54,8 @@ func validateVersion(version string) bool {
 	matched, _ := regexp.MatchString(`^[a-zA-Z0-9._-]+$`, version)
 	return matched && len(version) <= 50
 }
-
 func loadProducts() map[string]Product {
-	data, err := os.ReadFile(filepath.Join("products", "products.json"))
+	data, err := TrackedReadFile(filepath.Join("products", "products.json"))
 	if err != nil {
 		return make(map[string]Product)
 	}
@@ -73,17 +65,15 @@ func loadProducts() map[string]Product {
 	}
 	return products
 }
-
 func saveProducts(products map[string]Product) error {
 	data, err := json.MarshalIndent(products, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join("products", "products.json"), data, 0644)
+	return TrackedWriteFile(filepath.Join("products", "products.json"), data, 0644)
 }
-
 func loadLibrary() []LibraryRepo {
-	data, err := os.ReadFile(filepath.Join("products", "library.json"))
+	data, err := TrackedReadFile(filepath.Join("products", "library.json"))
 	if err != nil {
 		return []LibraryRepo{}
 	}
@@ -93,15 +83,13 @@ func loadLibrary() []LibraryRepo {
 	}
 	return library
 }
-
 func saveLibrary(library []LibraryRepo) error {
 	data, err := json.MarshalIndent(library, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join("products", "library.json"), data, 0644)
+	return TrackedWriteFile(filepath.Join("products", "library.json"), data, 0644)
 }
-
 func addLibraryRepo(name, repoURL, aiService, cpe string) error {
 	library := loadLibrary()
 	for _, repo := range library {
@@ -121,7 +109,6 @@ func addLibraryRepo(name, repoURL, aiService, cpe string) error {
 	library = append(library, newRepo)
 	return saveLibrary(library)
 }
-
 func removeLibraryRepo(repoID string) error {
 	library := loadLibrary()
 	newLibrary := []LibraryRepo{}
@@ -132,7 +119,6 @@ func removeLibraryRepo(repoID string) error {
 	}
 	return saveLibrary(newLibrary)
 }
-
 func toggleLibraryAutoScan(repoID string) error {
 	library := loadLibrary()
 	for i, repo := range library {
@@ -143,7 +129,6 @@ func toggleLibraryAutoScan(repoID string) error {
 	}
 	return fmt.Errorf("repository not found")
 }
-
 func getGitHubVersions(repoURL string) []string {
 	if !validateURL(repoURL) {
 		return []string{}
@@ -152,7 +137,6 @@ func getGitHubVersions(repoURL string) []string {
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Printf("Error creating request: %v", err)
 		return []string{}
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
@@ -161,7 +145,6 @@ func getGitHubVersions(repoURL string) []string {
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("Error fetching versions from GitHub: %v", err)
 		return []string{}
 	}
 	defer resp.Body.Close()
@@ -170,12 +153,10 @@ func getGitHubVersions(repoURL string) []string {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error reading response body: %v", err)
 		return []string{}
 	}
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
-		log.Printf("Error parsing JSON response: %v", err)
 		return []string{}
 	}
 	versions := []string{}
@@ -204,7 +185,6 @@ func getGitHubVersions(repoURL string) []string {
 	})
 	return uniqueVersions
 }
-
 func getGitHubVersionsByDate(repoURL string) []string {
 	if !validateURL(repoURL) {
 		return []string{}
@@ -213,7 +193,6 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Printf("Error creating request: %v", err)
 		return []string{}
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
@@ -222,7 +201,6 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("Error fetching tags from GitHub: %v", err)
 		return []string{}
 	}
 	defer resp.Body.Close()
@@ -231,12 +209,10 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error reading response body: %v", err)
 		return []string{}
 	}
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
-		log.Printf("Error parsing JSON response: %v", err)
 		return []string{}
 	}
 	tags := []string{}
@@ -283,20 +259,17 @@ func getGitHubVersionsByDate(repoURL string) []string {
 				releaseURL := fmt.Sprintf("%s/releases/tag/%s", repoURL, j.tag)
 				req, err := http.NewRequest("GET", releaseURL, nil)
 				if err != nil {
-					log.Printf("Error creating request for tag %s: %v", j.tag, err)
 					continue
 				}
 				req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
 				resp, err := client.Do(req)
 				if err != nil {
-					log.Printf("Error fetching release page for tag %s: %v", j.tag, err)
 					continue
 				}
 				if resp.StatusCode == http.StatusOK {
 					body, err := io.ReadAll(resp.Body)
 					resp.Body.Close()
 					if err != nil {
-						log.Printf("Error reading release page for tag %s: %v", j.tag, err)
 						continue
 					}
 					datetime := extractDatetimeFromHTML(string(body))
@@ -329,7 +302,6 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	}
 	return result
 }
-
 func extractDatetimeFromHTML(html string) time.Time {
 	tagRe := regexp.MustCompile(`<relative-time[^>]*>`)
 	classRe := regexp.MustCompile(`\bclass="([^"]+)"`)
@@ -361,11 +333,9 @@ func extractDatetimeFromHTML(html string) time.Time {
 				return datetime
 			}
 		}
-		log.Printf("Error parsing datetime %s: tried all supported formats", datetimeStr)
 	}
 	return time.Time{}
 }
-
 func loadAllAnalyses() []Analysis {
 	analyses := []Analysis{}
 	files, err := os.ReadDir("saved_analyses")
@@ -378,7 +348,7 @@ func loadAllAnalyses() []Analysis {
 			if !isValidUUID(analysisID) {
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join("saved_analyses", file.Name()))
+			data, err := TrackedReadFile(filepath.Join("saved_analyses", file.Name()))
 			if err != nil {
 				continue
 			}
@@ -395,7 +365,6 @@ func loadAllAnalyses() []Analysis {
 	})
 	return analyses
 }
-
 func createNewAnalysisRecord(params map[string]interface{}, source string, aiEnabled bool) string {
 	analysisID := uuid.New().String()
 	var aiService, aiModel string
@@ -421,14 +390,10 @@ func createNewAnalysisRecord(params map[string]interface{}, source string, aiEna
 	}
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	data, _ := json.MarshalIndent(analysis, "", "  ")
-	os.WriteFile(analysisPath, data, 0644)
-	
-	
+	TrackedWriteFile(analysisPath, data, 0644)
 	InvalidateDashboardCache()
-	
 	return analysisID
 }
-
 func countVulnerabilities(results map[string]AnalysisResult) int {
 	count := 0
 	for _, result := range results {
@@ -446,12 +411,10 @@ func countVulnerabilities(results map[string]AnalysisResult) int {
 	}
 	return count
 }
-
 func splitVersionString(version string) []string {
 	normalized := strings.ReplaceAll(version, "_", ".")
 	return strings.Split(normalized, ".")
 }
-
 func compareVersions(v1, v2 string) int {
 	v1 = strings.TrimPrefix(v1, "v")
 	v2 = strings.TrimPrefix(v2, "v")
@@ -486,7 +449,6 @@ func compareVersions(v1, v2 string) int {
 	}
 	return 0
 }
-
 func parseVersionPart(part string) (int, error) {
 	cleanPart := part
 	for i, char := range part {
@@ -500,7 +462,6 @@ func parseVersionPart(part string) (int, error) {
 	}
 	return strconv.Atoi(cleanPart)
 }
-
 func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=%s", cpeName)
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -512,17 +473,14 @@ func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 	if config != nil && config.NVD != nil {
 		if apiKey, ok := config.NVD["api_key"].(string); ok && apiKey != "" {
 			req.Header.Set("apiKey", apiKey)
-			log.Printf("Using NVD API key for request (enhanced rate limits)")
 		}
 	}
-	
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch CVEs: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("NVD API returned status %d for CPE: %s", resp.StatusCode, cpeName)
 		return nil, fmt.Errorf("NVD API returned status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
@@ -531,23 +489,19 @@ func fetchCVEsFromNVD(cpeName string) ([]CVE, error) {
 	}
 	var nvdResponse NVDResponse
 	if err := json.Unmarshal(body, &nvdResponse); err != nil {
-		log.Printf("Failed to parse NVD response: %v", err)
 		return nil, fmt.Errorf("failed to parse NVD response: %v", err)
 	}
 	var cves []CVE
 	for _, vuln := range nvdResponse.Vulnerabilities {
 		cves = append(cves, vuln.CVE)
 	}
-	log.Printf("Parsed %d CVEs from NVD response", len(cves))
 	return cves, nil
 }
-
 func getCVEsForVersion(cpe, version string) ([]CVE, error) {
 	cpeVersion := strings.Replace(version, "-", ":", -1)
 	cpeName := fmt.Sprintf("%s:%s", cpe, cpeVersion)
 	return fetchCVEsFromNVD(cpeName)
 }
-
 func getNextIncrementalVersion(currentVersion string, allVersions []string) string {
 	parts := strings.SplitN(currentVersion, "-", 2)
 	if len(parts) != 2 {
@@ -567,15 +521,12 @@ func getNextIncrementalVersion(currentVersion string, allVersions []string) stri
 	for i := 0; i < currentIdx; i++ {
 		v := allVersions[i]
 		if strings.HasPrefix(v, baseVersion+"-") {
-			log.Printf("🔄 Found incremental version: %s → %s", currentVersion, v)
 			return v
 		}
 	}
 	nextVer := findNextVersion(currentVersion, allVersions)
-	log.Printf("📈 No incremental version found, jumping to: %s → %s", currentVersion, nextVer)
 	return nextVer
 }
-
 func findNextVersion(currentVersion string, allVersions []string) string {
 	currentIdx := -1
 	for i, v := range allVersions {
@@ -592,10 +543,9 @@ func findNextVersion(currentVersion string, allVersions []string) string {
 	}
 	return currentVersion
 }
-
 func updateAnalysisParams(analysisID string, params map[string]interface{}) error {
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
-	data, err := os.ReadFile(analysisPath)
+	data, err := TrackedReadFile(analysisPath)
 	if err != nil {
 		return fmt.Errorf("failed to read analysis file: %w", err)
 	}
@@ -608,15 +558,13 @@ func updateAnalysisParams(analysisID string, params map[string]interface{}) erro
 	if err != nil {
 		return fmt.Errorf("failed to marshal analysis: %w", err)
 	}
-	if err := os.WriteFile(analysisPath, updatedData, 0644); err != nil {
+	if err := TrackedWriteFile(analysisPath, updatedData, 0644); err != nil {
 		return fmt.Errorf("failed to write analysis file: %w", err)
 	}
 	return nil
 }
-
 func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[string]AnalysisResult {
-	log.Printf("Running CVE-based analysis with params: %v", params)
-	repoName, _ := params["repo_name"].(string)
+	_, _ = params["repo_name"].(string)
 	repoURL, _ := params["repo_url"].(string)
 	oldVersion, _ := params["old_version"].(string)
 	newVersion, _ := params["new_version"].(string)
@@ -626,19 +574,13 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 	extension, _ := params["extension"].(string)
 	specialKeywords, _ := params["special_keywords"].(string)
 	if repoURL == "" || oldVersion == "" || newVersion == "" || cpe == "" {
-		log.Printf("Missing required parameters for CVE-based analysis")
 		return make(map[string]AnalysisResult)
 	}
-	log.Printf("Analyzing %s: %s -> %s using CVE data (CPE: %s)", repoName, oldVersion, newVersion, cpe)
-	log.Printf("Fetching CVEs for OLD version %s (patch analysis approach)", oldVersion)
 	oldCVEs, err := getCVEsForVersion(cpe, oldVersion)
 	if err != nil {
-		log.Printf("Failed to fetch CVEs for old version: %v", err)
 		return make(map[string]AnalysisResult)
 	}
-	log.Printf("Found %d CVEs for old version %s", len(oldCVEs), oldVersion)
 	if len(oldCVEs) == 0 {
-		log.Printf("No CVEs found for version %s - proceeding without CVE matching", oldVersion)
 	} else {
 		cveIDs := make([]string, 0, len(oldCVEs))
 		for _, cve := range oldCVEs {
@@ -646,30 +588,24 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		}
 		params["cve_ids"] = strings.Join(cveIDs, ", ")
 		if err := updateAnalysisParams(analysisID, params); err != nil {
-			log.Printf("Failed to update analysis params with CVE IDs: %v", err)
 		}
 	}
 	oldPath, err := downloadAndExtractVersion(repoURL, oldVersion)
 	if err != nil {
-		log.Printf("Failed to download old version %s: %v", oldVersion, err)
 		return make(map[string]AnalysisResult)
 	}
 	newPath, err := downloadAndExtractVersion(repoURL, newVersion)
 	if err != nil {
-		log.Printf("Failed to download new version %s: %v", newVersion, err)
 		return make(map[string]AnalysisResult)
 	}
 	diffs := compareDirectories(oldPath, newPath, extension)
-	log.Printf("Found %d file differences", len(diffs))
 	results := analyzeDiffsWithCVEs(diffs, specialKeywords, oldCVEs)
 	if enableAI && len(results) > 0 {
 		cveIDsStr, _ := params["cve_ids"].(string)
 		results = runAIAnalysisOnResults(results, cveIDsStr, *aiThreads, newPath)
 	}
-	log.Printf("CVE-based analysis complete: %d files with potential issues", len(results))
 	return results
 }
-
 func analyzeDiffsWithCVEs(diffs []DiffFile, keywords string, cves []CVE) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	for _, diff := range diffs {
