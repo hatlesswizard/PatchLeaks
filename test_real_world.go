@@ -1,19 +1,16 @@
 package main
-
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
-
 type RealWorldTest struct {
 	ProjectName   string
 	Language      string
@@ -23,7 +20,6 @@ type RealWorldTest struct {
 	DownloadURL2  string
 	ExpectedDiffs int
 }
-
 type cacheMetadata struct {
 	Project       string    `json:"project"`
 	Language      string    `json:"language"`
@@ -33,7 +29,6 @@ type cacheMetadata struct {
 	ArchiveSHA256 string    `json:"archive_sha256"`
 	ArchiveSize   int64     `json:"archive_size"`
 }
-
 type diffArtifact struct {
 	Project     string     `json:"project"`
 	Language    string     `json:"language"`
@@ -44,7 +39,6 @@ type diffArtifact struct {
 	Highlights  []string   `json:"highlights"`
 	Files       []DiffFile `json:"files"`
 }
-
 func GetRealWorldTests() []RealWorldTest {
 	return []RealWorldTest{
 		{
@@ -274,7 +268,6 @@ func GetRealWorldTests() []RealWorldTest {
 		},
 	}
 }
-
 func DownloadProject(test *RealWorldTest, version string, url string) (string, error) {
 	cacheDir := "cache"
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
@@ -287,10 +280,8 @@ func DownloadProject(test *RealWorldTest, version string, url string) (string, e
 	metadataPath := filepath.Join(cachePath, ".metadata.json")
 	if info, err := os.Stat(cachePath); err == nil && info.IsDir() {
 		if _, err := os.Stat(markerPath); err == nil {
-			log.Printf("Using cached version: %s %s", test.ProjectName, version)
 			return cachePath, nil
 		}
-		log.Printf("Cache for %s %s exists but is incomplete, refreshing", test.ProjectName, version)
 		if err := os.RemoveAll(cachePath); err != nil {
 			return "", fmt.Errorf("failed to clear incomplete cache: %w", err)
 		}
@@ -300,17 +291,13 @@ func DownloadProject(test *RealWorldTest, version string, url string) (string, e
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt > 1 {
 			backoff := time.Duration(attempt-1) * time.Second
-			log.Printf("Retrying download for %s %s (attempt %d/%d) after %v", test.ProjectName, version, attempt, maxAttempts, backoff)
 			time.Sleep(backoff)
 		} else {
-			log.Printf("Downloading %s %s from %s", test.ProjectName, version, url)
 		}
 		if err := fetchAndCacheProject(test, version, url, cachePath, markerPath, metadataPath); err != nil {
 			lastErr = err
-			log.Printf("Attempt %d for %s %s failed: %v", attempt, test.ProjectName, version, err)
 			continue
 		}
-		log.Printf("Cached %s %s to %s", test.ProjectName, version, cachePath)
 		return cachePath, nil
 	}
 	if lastErr == nil {
@@ -318,7 +305,6 @@ func DownloadProject(test *RealWorldTest, version string, url string) (string, e
 	}
 	return "", fmt.Errorf("failed to download %s %s after %d attempts: %w", test.ProjectName, version, maxAttempts, lastErr)
 }
-
 func fetchAndCacheProject(test *RealWorldTest, version, url, cachePath, markerPath, metadataPath string) error {
 	tempDir, err := os.MkdirTemp("", fmt.Sprintf("test_%s_%s_*", sanitizeForPath(test.ProjectName), sanitizeForPath(version)))
 	if err != nil {
@@ -339,7 +325,7 @@ func fetchAndCacheProject(test *RealWorldTest, version, url, cachePath, markerPa
 		return fmt.Errorf("failed to create archive file: %w", err)
 	}
 	hasher := sha256.New()
-	written, err := io.Copy(io.MultiWriter(zipFile, hasher), resp.Body)
+	written, err := TrackedCopy(io.MultiWriter(zipFile, hasher), resp.Body)
 	if closeErr := zipFile.Close(); closeErr != nil && err == nil {
 		err = closeErr
 	}
@@ -389,15 +375,12 @@ func fetchAndCacheProject(test *RealWorldTest, version, url, cachePath, markerPa
 	if err := writeJSONFile(metadataPath, metadata); err != nil {
 		return fmt.Errorf("failed to write cache metadata: %w", err)
 	}
-	if err := os.WriteFile(markerPath, []byte(archiveSHA), 0644); err != nil {
+	if err := TrackedWriteFile(markerPath, []byte(archiveSHA), 0644); err != nil {
 		return fmt.Errorf("failed to write cache marker: %w", err)
 	}
 	return nil
 }
-
 func RunPatchDiff(test *RealWorldTest) (*AnalysisResult, error) {
-	log.Printf("Running patch diff test for %s (%s): %s -> %s",
-		test.ProjectName, test.Language, test.Version1, test.Version2)
 	oldPath, err := DownloadProject(test, test.Version1, test.DownloadURL1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download version 1: %v", err)
@@ -434,16 +417,12 @@ func RunPatchDiff(test *RealWorldTest) (*AnalysisResult, error) {
 		extension = ""
 	}
 	diffs := compareDirectories(oldPath, newPath, extension)
-	log.Printf("Found %d file differences (expected ~%d)", len(diffs), test.ExpectedDiffs)
-	if artifactPath, err := saveDiffArtifacts(test, diffs); err != nil {
-		log.Printf("Failed to persist diff artifacts for %s: %v", test.ProjectName, err)
+	if _, err := saveDiffArtifacts(test, diffs); err != nil {
 	} else {
-		log.Printf("Saved diff artifacts for %s to %s", test.ProjectName, artifactPath)
 	}
 	results := analyzeDiffsForVulnerabilities(diffs, "", "")
 	if config != nil && len(results) > 0 {
-		log.Printf("Running AI analysis on %d results", len(results))
-		results = runAIAnalysisOnResults(results, "", 1, newPath)
+		results = runAIAnalysisOnResults(results, "", *aiThreads, newPath)
 	}
 	summary := &AnalysisResult{
 		Context: []string{
@@ -456,7 +435,6 @@ func RunPatchDiff(test *RealWorldTest) (*AnalysisResult, error) {
 	}
 	return summary, nil
 }
-
 func ValidateResults(test *RealWorldTest, result *AnalysisResult) []string {
 	var issues []string
 	if len(result.Context) < 3 {
@@ -468,7 +446,6 @@ func ValidateResults(test *RealWorldTest, result *AnalysisResult) []string {
 	}
 	return issues
 }
-
 func saveDiffArtifacts(test *RealWorldTest, diffs []DiffFile) (string, error) {
 	baseDir := filepath.Join("cache", fmt.Sprintf("%s_%s", sanitizeForPath(test.ProjectName), strings.ToLower(test.Language)), "diffs")
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
@@ -499,7 +476,6 @@ func saveDiffArtifacts(test *RealWorldTest, diffs []DiffFile) (string, error) {
 	}
 	return artifactPath, nil
 }
-
 func sanitizeForPath(value string) string {
 	if value == "" {
 		return "unknown"
@@ -525,15 +501,13 @@ func sanitizeForPath(value string) string {
 	}
 	return sanitized
 }
-
 func writeJSONFile(path string, payload interface{}) error {
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return TrackedWriteFile(path, data, 0644)
 }
-
 func RunRealWorldTests(languages []string) error {
 	tests := GetRealWorldTests()
 	if len(languages) > 0 {
@@ -551,33 +525,23 @@ func RunRealWorldTests(languages []string) error {
 	if len(tests) == 0 {
 		return fmt.Errorf("no tests found for specified languages")
 	}
-	log.Printf("Running %d real-world tests", len(tests))
 	successCount := 0
 	failureCount := 0
-	for i, test := range tests {
-		log.Printf("\n=== Test %d/%d: %s ===\n", i+1, len(tests), test.ProjectName)
+	for _, test := range tests {
 		startTime := time.Now()
 		result, err := RunPatchDiff(&test)
-		duration := time.Since(startTime)
+		_ = time.Since(startTime)
 		if err != nil {
-			log.Printf("FAILED: %v", err)
 			failureCount++
 			continue
 		}
 		issues := ValidateResults(&test, result)
 		if len(issues) > 0 {
-			log.Printf("WARNINGS:")
-			for _, issue := range issues {
-				log.Printf("  - %s", issue)
+			for _, _ = range issues {
 			}
 		}
-		log.Printf("SUCCESS: Completed in %v", duration)
 		successCount++
 	}
-	log.Printf("\n=== Summary ===")
-	log.Printf("Total tests: %d", len(tests))
-	log.Printf("Successful: %d", successCount)
-	log.Printf("Failed: %d", failureCount)
 	if failureCount > 0 {
 		return fmt.Errorf("%d tests failed", failureCount)
 	}
