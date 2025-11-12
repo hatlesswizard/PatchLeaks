@@ -1,14 +1,10 @@
 package main
-
 import (
 	"encoding/json"
-	"os"
 )
-
 const (
 	AIConfigFile = "ai_config.json"
 )
-
 type Config struct {
 	Service    string                 `json:"service"`
 	Ollama     map[string]interface{} `json:"ollama"`
@@ -19,9 +15,8 @@ type Config struct {
 	Parameters map[string]interface{} `json:"parameters"`
 	Prompts    map[string]string      `json:"prompts"`
 }
-
 func LoadConfig() (*Config, error) {
-	data, err := os.ReadFile(AIConfigFile)
+	data, err := TrackedReadFile(AIConfigFile)
 	if err != nil {
 		return DefaultConfig(), nil
 	}
@@ -65,15 +60,13 @@ func LoadConfig() (*Config, error) {
 	}
 	return &config, nil
 }
-
 func (c *Config) Save() error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(AIConfigFile, data, 0644)
+	return TrackedWriteFile(AIConfigFile, data, 0644)
 }
-
 func (c *Config) GetServiceConfig(service string) (map[string]interface{}, bool) {
 	switch service {
 	case "ollama":
@@ -88,7 +81,6 @@ func (c *Config) GetServiceConfig(service string) (map[string]interface{}, bool)
 		return nil, false
 	}
 }
-
 func DefaultConfig() *Config {
 	return &Config{
 		Service: "ollama",
@@ -124,7 +116,6 @@ func DefaultConfig() *Config {
 		Prompts: DefaultPrompts(),
 	}
 }
-
 func DefaultPrompts() map[string]string {
 	return map[string]string{
 		"main_analysis": `Analyze the provided code diff for security fixes.
