@@ -1,5 +1,4 @@
 package main
-
 import (
 	"crypto/md5"
 	"encoding/hex"
@@ -7,20 +6,19 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
-
 const (
 	DefaultHost = "127.0.0.1"
 )
-
 var (
 	config            *Config
 	sessionStore      *sessions.CookieStore
@@ -32,20 +30,15 @@ var (
 	testRealWorld     = flag.Bool("test-real-world", false, "Run real-world tests instead of starting server")
 	testLanguages     = flag.String("language", "", "Comma-separated list of languages to test (php,javascript,python)")
 )
-
 func main() {
 	flag.Parse()
-	
-	
-	
-	maxCPUPercent := 150.0 
+	maxCPUPercent := 50.0 
 	InitCPUThrottler(maxCPUPercent)
-	
-	
-	
-	log.Printf("CPU throttling enabled: max %.0f%% CPU usage with %d threads", maxCPUPercent, *aiThreads)
-	
 	GetBuiltinDetector()
+	
+	// Setup graceful shutdown
+	setupGracefulShutdown()
+	
 	if *testRealWorld {
 		initializeDirectories()
 		var languages []string
@@ -55,11 +48,11 @@ func main() {
 				languages[i] = strings.TrimSpace(lang)
 			}
 		}
-		log.Printf("Running real-world tests...")
 		if err := RunRealWorldTests(languages); err != nil {
-			log.Fatalf("Real-world tests failed: %v", err)
+			ShutdownDiskLogger() // Ensure logs are flushed before exit
+			os.Exit(1)
 		}
-		log.Printf("All real-world tests passed!")
+		ShutdownDiskLogger() // Ensure logs are flushed before exit
 		os.Exit(0)
 	}
 	basicAuthUsername = generateRandomMD5()
@@ -67,37 +60,49 @@ func main() {
 	serverPort := *port
 	if serverPort == 0 {
 		serverPort = findFreePort()
-		fmt.Printf("No port specified, using random free port: %d\n", serverPort)
 	}
 	initializeDirectories()
 	var err error
 	config, err = LoadConfig()
 	if err != nil {
-		log.Printf("Warning: Could not load config, using defaults: %v", err)
 		config = DefaultConfig()
 	}
 	sessionStore = sessions.NewCookieStore([]byte(generateRandomMD5()))
 	router := setupRouter()
 	printBanner(basicAuthUsername, basicAuthPassword, *host, serverPort, *aiThreads)
 	go startScheduler()
-	log.Printf("Pre-calculating dashboard statistics...")
 	go func() {
-		startTime := time.Now()
 		_, err := GetDashboardStats()
 		if err != nil {
-			log.Printf("Warning: Failed to pre-calculate dashboard stats: %v", err)
 		} else {
-			log.Printf("Dashboard statistics pre-calculated in %v", time.Since(startTime))
 		}
 	}()
 	
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+		}
+	}()
 	addr := fmt.Sprintf("%s:%d", *host, serverPort)
-	log.Printf("Starting server on %s", addr)
 	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+		ShutdownDiskLogger() // Ensure logs are flushed before exit
+		os.Exit(1)
 	}
 }
 
+// setupGracefulShutdown sets up signal handlers for graceful shutdown
+func setupGracefulShutdown() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	go func() {
+		<-sigChan
+		fmt.Println("\nReceived shutdown signal, flushing logs...")
+		ShutdownDiskLogger()
+		os.Exit(0)
+	}()
+}
 func setupRouter() *mux.Router {
 	r := mux.NewRouter()
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
@@ -124,23 +129,20 @@ func setupRouter() *mux.Router {
 	r.HandleFunc("/api/dashboard/stats", dashboardAPIHandler).Methods("GET")
 	return r
 }
-
 func generateRandomMD5() string {
 	randBytes := make([]byte, 16)
 	rand.Read(randBytes)
 	hash := md5.Sum(randBytes)
 	return hex.EncodeToString(hash[:])
 }
-
 func findFreePort() int {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
-		log.Fatal(err)
+		os.Exit(1)
 	}
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port
 }
-
 func initializeDirectories() {
 	dirs := []string{
 		"products",
@@ -149,23 +151,23 @@ func initializeDirectories() {
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Fatalf("Failed to create directory %s: %v", dir, err)
+			os.Exit(1)
 		}
+		TrackDiskWrite(100)
 	}
 	productsFile := filepath.Join("products", "products.json")
 	if _, err := os.Stat(productsFile); os.IsNotExist(err) {
-		if err := os.WriteFile(productsFile, []byte("{}"), 0644); err != nil {
-			log.Printf("Warning: Could not create products.json: %v", err)
+		if err := TrackedWriteFile(productsFile, []byte("{}"), 0644); err != nil {
 		}
+		TrackDiskWrite(2)
 	}
 	libraryFile := filepath.Join("products", "library.json")
 	if _, err := os.Stat(libraryFile); os.IsNotExist(err) {
-		if err := os.WriteFile(libraryFile, []byte("[]"), 0644); err != nil {
-			log.Printf("Warning: Could not create library.json: %v", err)
+		if err := TrackedWriteFile(libraryFile, []byte("[]"), 0644); err != nil {
 		}
+		TrackDiskWrite(2)
 	}
 }
-
 func printBanner(username, password, host string, port, aiThreads int) {
 	serverURL := fmt.Sprintf("http://%s:%d", host, port)
 	aiThreadsStr := fmt.Sprintf("%d", aiThreads)
@@ -199,7 +201,6 @@ func printBanner(username, password, host string, port, aiThreads int) {
 `, urlLine, threadsLine, username, password)
 	fmt.Println(banner)
 }
-
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
