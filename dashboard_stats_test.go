@@ -1,11 +1,9 @@
 package main
-
 import (
 	"reflect"
 	"sort"
 	"testing"
 )
-
 func TestExtractCWEsFromAIResponse(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -88,43 +86,33 @@ func TestExtractCWEsFromAIResponse(t *testing.T) {
 			expected: []string{"CWE-327: Use of a Broken or Risky Cryptographic Algorithm (MD5/SHA1)"},
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractCWEsFromAIResponse(tt.input)
-			
-			
 			sort.Strings(result)
 			sort.Strings(tt.expected)
-			
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("extractCWEsFromAIResponse() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
 }
-
 func TestExtractCWEsFromAIResponseRealWorld(t *testing.T) {
-	
 	realAIResponse := `Vulnerability Existed: yes
 CWE-117: Improper Output Neutralization for Logs - CWE-117 - packages/apps-engine/src/server/runtime/deno/AppsEngineDenoRuntime.ts [181, 324, 428, 526, 551, 646, 695]
 Old Code: Various debug statements using %O and %o format specifiers
 Fixed Code: Various debug statements using %s format specifier with util.inspect()
-
 Vulnerability Existed: yes
 CWE-532: Insertion of Sensitive Information into Log File - CWE-532 - packages/apps-engine/src/server/runtime/deno/AppsEngineDenoRuntime.ts [181, 324, 428, 526, 551, 646, 695]
 Old Code: Various debug statements logging potentially sensitive data like options, environment, message content, parameters, and error messages
 Fixed Code: Same debug statements but using util.inspect() with depth limitation for safer logging`
-
 	expected := []string{
 		"CWE-117: Improper Output Neutralization for Logs",
 		"CWE-532: Insertion of Sensitive Information into Log File",
 	}
-
 	result := extractCWEsFromAIResponse(realAIResponse)
 	sort.Strings(result)
 	sort.Strings(expected)
-
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("Real world example failed:\nGot:  %v\nWant: %v", result, expected)
 	}
