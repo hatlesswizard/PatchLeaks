@@ -1,13 +1,10 @@
 package main
-
 import (
 	"encoding/json"
-	"log"
 	"os/exec"
 	"strings"
 	"sync"
 )
-
 type BuiltinDetector struct {
 	phpBuiltins    map[string]bool
 	jsBuiltins     map[string]bool
@@ -22,19 +19,16 @@ type BuiltinDetector struct {
 	mu             sync.RWMutex
 	initialized    bool
 }
-
 var (
 	globalBuiltinDetector *BuiltinDetector
 	detectorOnce          sync.Once
 )
-
 func GetBuiltinDetector() *BuiltinDetector {
 	detectorOnce.Do(func() {
 		globalBuiltinDetector = NewBuiltinDetector()
 	})
 	return globalBuiltinDetector
 }
-
 func NewBuiltinDetector() *BuiltinDetector {
 	bd := &BuiltinDetector{
 		phpBuiltins:    make(map[string]bool),
@@ -52,14 +46,12 @@ func NewBuiltinDetector() *BuiltinDetector {
 	go bd.initialize()
 	return bd
 }
-
 func (bd *BuiltinDetector) initialize() {
 	bd.mu.Lock()
 	defer bd.mu.Unlock()
 	if bd.initialized {
 		return
 	}
-	log.Printf("Initializing built-in function detector...")
 	bd.loadPHPBuiltins()
 	bd.loadJavaScriptBuiltins()
 	bd.loadPythonBuiltins()
@@ -71,17 +63,7 @@ func (bd *BuiltinDetector) initialize() {
 	bd.loadRubyBuiltins()
 	bd.loadRustBuiltins()
 	bd.initialized = true
-	total := len(bd.phpBuiltins) + len(bd.jsBuiltins) + len(bd.pyBuiltins) +
-		len(bd.cBuiltins) + len(bd.cppBuiltins) + len(bd.csharpBuiltins) +
-		len(bd.goBuiltins) + len(bd.javaBuiltins) + len(bd.rubyBuiltins) +
-		len(bd.rustBuiltins)
-	log.Printf("Built-in detector initialized: %d PHP, %d JS, %d Python, %d C, %d C++, %d C#, %d Go, %d Java, %d Ruby, %d Rust functions",
-		len(bd.phpBuiltins), len(bd.jsBuiltins), len(bd.pyBuiltins), len(bd.cBuiltins),
-		len(bd.cppBuiltins), len(bd.csharpBuiltins), len(bd.goBuiltins), len(bd.javaBuiltins),
-		len(bd.rubyBuiltins), len(bd.rustBuiltins))
-	log.Printf("Total built-in functions: %d", total)
 }
-
 func (bd *BuiltinDetector) IsBuiltin(language, funcName string) bool {
 	if !bd.initialized {
 		bd.initialize()
@@ -113,7 +95,6 @@ func (bd *BuiltinDetector) IsBuiltin(language, funcName string) bool {
 		return false
 	}
 }
-
 func (bd *BuiltinDetector) loadPHPBuiltins() {
 	languageConstructs := []string{
 		"array", "list", "echo", "print", "die", "exit", "empty", "isset", "unset",
@@ -130,7 +111,6 @@ func (bd *BuiltinDetector) loadPHPBuiltins() {
 			for _, f := range funcs {
 				bd.phpBuiltins[f] = true
 			}
-			log.Printf("Loaded %d PHP built-in functions from PHP CLI (+ %d language constructs)", len(funcs), len(languageConstructs))
 			return
 		}
 	}
@@ -150,9 +130,7 @@ func (bd *BuiltinDetector) loadPHPBuiltins() {
 	for _, f := range commonPHPBuiltins {
 		bd.phpBuiltins[f] = true
 	}
-	log.Printf("Loaded %d PHP built-in functions from fallback list (+ %d language constructs)", len(commonPHPBuiltins), len(languageConstructs))
 }
-
 func (bd *BuiltinDetector) loadJavaScriptBuiltins() {
 	jsBuiltins := []string{
 		"Array", "Object", "String", "Number", "Boolean", "Date", "RegExp",
@@ -179,9 +157,7 @@ func (bd *BuiltinDetector) loadJavaScriptBuiltins() {
 	for _, f := range jsBuiltins {
 		bd.jsBuiltins[f] = true
 	}
-	log.Printf("Loaded %d JavaScript built-in functions", len(jsBuiltins))
 }
-
 func (bd *BuiltinDetector) loadPythonBuiltins() {
 	cmd := exec.Command("python3", "-c", "import json; import builtins; print(json.dumps([x for x in dir(builtins) if callable(getattr(builtins, x, None)) or x in ['__import__', '__build_class__']]))")
 	output, err := cmd.Output()
@@ -191,7 +167,6 @@ func (bd *BuiltinDetector) loadPythonBuiltins() {
 			for _, f := range funcs {
 				bd.pyBuiltins[f] = true
 			}
-			log.Printf("Loaded %d Python built-in functions from Python CLI", len(funcs))
 			return
 		}
 	}
@@ -203,7 +178,6 @@ func (bd *BuiltinDetector) loadPythonBuiltins() {
 			for _, f := range funcs {
 				bd.pyBuiltins[f] = true
 			}
-			log.Printf("Loaded %d Python built-in functions from Python CLI", len(funcs))
 			return
 		}
 	}
@@ -222,9 +196,7 @@ func (bd *BuiltinDetector) loadPythonBuiltins() {
 	for _, f := range commonPythonBuiltins {
 		bd.pyBuiltins[f] = true
 	}
-	log.Printf("Loaded %d Python built-in functions from fallback list", len(commonPythonBuiltins))
 }
-
 func (bd *BuiltinDetector) loadCBuiltins() {
 	cBuiltins := []string{
 		"printf", "fprintf", "sprintf", "snprintf", "scanf", "fscanf", "sscanf",
@@ -254,9 +226,7 @@ func (bd *BuiltinDetector) loadCBuiltins() {
 	for _, f := range cBuiltins {
 		bd.cBuiltins[f] = true
 	}
-	log.Printf("Loaded %d C standard library functions", len(cBuiltins))
 }
-
 func (bd *BuiltinDetector) loadCppBuiltins() {
 	cppBuiltins := []string{
 		"cout", "cin", "cerr", "clog", "endl", "flush",
@@ -282,9 +252,7 @@ func (bd *BuiltinDetector) loadCppBuiltins() {
 	for _, f := range cppBuiltins {
 		bd.cppBuiltins[f] = true
 	}
-	log.Printf("Loaded %d C++ standard library functions", len(cppBuiltins))
 }
-
 func (bd *BuiltinDetector) loadCSharpBuiltins() {
 	csharpBuiltins := []string{
 		"WriteLine", "Write", "ReadLine", "Read", "Clear",
@@ -313,9 +281,7 @@ func (bd *BuiltinDetector) loadCSharpBuiltins() {
 	for _, f := range csharpBuiltins {
 		bd.csharpBuiltins[f] = true
 	}
-	log.Printf("Loaded %d C# .NET built-in methods", len(csharpBuiltins))
 }
-
 func (bd *BuiltinDetector) loadGoBuiltins() {
 	cmd := exec.Command("go", "doc", "builtin")
 	output, err := cmd.Output()
@@ -332,9 +298,7 @@ func (bd *BuiltinDetector) loadGoBuiltins() {
 	for _, f := range goBuiltins {
 		bd.goBuiltins[f] = true
 	}
-	log.Printf("Loaded %d Go built-in functions", len(goBuiltins))
 }
-
 func (bd *BuiltinDetector) loadJavaBuiltins() {
 	javaBuiltins := []string{
 		"println", "print", "printf", "currentTimeMillis", "nanoTime",
@@ -358,9 +322,7 @@ func (bd *BuiltinDetector) loadJavaBuiltins() {
 	for _, f := range javaBuiltins {
 		bd.javaBuiltins[f] = true
 	}
-	log.Printf("Loaded %d Java built-in methods", len(javaBuiltins))
 }
-
 func (bd *BuiltinDetector) loadRubyBuiltins() {
 	cmd := exec.Command("ruby", "-e", "puts (Kernel.methods + Object.instance_methods + Array.instance_methods + Hash.instance_methods).uniq.sort")
 	output, err := cmd.Output()
@@ -373,7 +335,6 @@ func (bd *BuiltinDetector) loadRubyBuiltins() {
 			}
 		}
 		if len(bd.rubyBuiltins) > 0 {
-			log.Printf("Loaded %d Ruby built-in methods from Ruby CLI", len(bd.rubyBuiltins))
 			return
 		}
 	}
@@ -405,9 +366,7 @@ func (bd *BuiltinDetector) loadRubyBuiltins() {
 	for _, f := range rubyBuiltins {
 		bd.rubyBuiltins[f] = true
 	}
-	log.Printf("Loaded %d Ruby built-in methods from fallback list", len(rubyBuiltins))
 }
-
 func (bd *BuiltinDetector) loadRustBuiltins() {
 	rustBuiltins := []string{
 		"println!", "print!", "format!", "vec!", "panic!", "assert!", "assert_eq!",
@@ -438,5 +397,4 @@ func (bd *BuiltinDetector) loadRustBuiltins() {
 	for _, f := range rustBuiltins {
 		bd.rustBuiltins[f] = true
 	}
-	log.Printf("Loaded %d Rust standard library items and macros", len(rustBuiltins))
 }
