@@ -1,5 +1,4 @@
 package main
-
 import (
 	"fmt"
 	sitter "github.com/smacker/go-tree-sitter"
@@ -17,50 +16,854 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
-func TSFindPHPFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+type phpFileCache struct {
+	src         []byte
+	tree        *sitter.Tree
+	root        *sitter.Node
+	modTime     time.Time
+	funcIndex   map[string]*sitter.Node 
+	methodIndex map[string]*sitter.Node 
+}
+var (
+	phpCache   = make(map[string]*phpFileCache)
+	phpCacheMu sync.RWMutex
+)
+
+func buildPHPIndex(root *sitter.Node, src []byte) (funcIndex, methodIndex map[string]*sitter.Node) {
+	funcIndex = make(map[string]*sitter.Node)
+	methodIndex = make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		nodeType := node.Type()
+		if nodeType == "function_definition" {
+			
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "name" && ch.ChildCount() == 0 {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					funcIndex[name] = node
+					break
+				}
+			}
+		} else if nodeType == "method_declaration" {
+			
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "name" && ch.ChildCount() == 0 {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					methodIndex[name] = node
+					break
+				}
+			}
+		}
+		
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex, methodIndex
+}
+
+func getOrParsePHPFile(filePath string) (*phpFileCache, error) {
+	
+	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return "", "", err
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	
+	phpCacheMu.RLock()
+	cached, exists := phpCache[filePath]
+	phpCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		
+		return cached, nil
+	}
+	
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
 	}
 	lang := tsphp.GetLanguage()
 	p := sitter.NewParser()
 	p.SetLanguage(lang)
 	tree := p.Parse(nil, src)
 	root := tree.RootNode()
-	fn := findPHPFunctionByNameNode(root, src, name)
-	if fn == nil {
-		return "", "", fmt.Errorf("function %s not found", name)
+	
+	funcIndex, methodIndex := buildPHPIndex(root, src)
+	
+	cache := &phpFileCache{
+		src:         src,
+		tree:        tree,
+		root:        root,
+		modTime:     modTime,
+		funcIndex:   funcIndex,
+		methodIndex: methodIndex,
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
-	idx := strings.Index(text, "{")
-	if idx > 0 {
-		signature = strings.TrimSpace(text[:idx])
-		endIdx := strings.LastIndex(text, "}")
-		if endIdx > idx+1 {
-			body = strings.TrimRight(text[idx+1:endIdx], "\n\r ")
-		}
-	} else {
-		signature = strings.TrimSpace(text)
-	}
-	return signature, body, nil
+	
+	phpCacheMu.Lock()
+	phpCache[filePath] = cache
+	phpCacheMu.Unlock()
+	return cache, nil
 }
 
-func TSFindPHPMethod(filePath string, methodName string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+type pythonFileCache struct {
+	src       []byte
+	tree      *sitter.Tree
+	root      *sitter.Node
+	modTime   time.Time
+	funcIndex map[string]*sitter.Node 
+}
+var (
+	pythonCache   = make(map[string]*pythonFileCache)
+	pythonCacheMu sync.RWMutex
+)
+
+func buildPythonIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	funcIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "function_definition" {
+			
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					funcIndex[name] = node
+					break
+				}
+			}
+		}
+		
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex
+}
+
+func getOrParsePythonFile(filePath string) (*pythonFileCache, error) {
+	
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	
+	pythonCacheMu.RLock()
+	cached, exists := pythonCache[filePath]
+	pythonCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		
+		return cached, nil
+	}
+	
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	lang := tspy.GetLanguage()
+	p := sitter.NewParser()
+	p.SetLanguage(lang)
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	
+	funcIndex := buildPythonIndex(root, src)
+	
+	cache := &pythonFileCache{
+		src:       src,
+		tree:      tree,
+		root:      root,
+		modTime:   modTime,
+		funcIndex: funcIndex,
+	}
+	
+	pythonCacheMu.Lock()
+	pythonCache[filePath] = cache
+	pythonCacheMu.Unlock()
+	return cache, nil
+}
+
+type cFileCache struct {
+	src       []byte
+	tree      *sitter.Tree
+	root      *sitter.Node
+	modTime   time.Time
+	funcIndex map[string]*sitter.Node 
+}
+var (
+	cCache   = make(map[string]*cFileCache)
+	cCacheMu sync.RWMutex
+)
+
+func buildCIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	funcIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "function_definition" {
+			
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "function_declarator" {
+					ident := extractCIdentifierFromDeclarator(ch, src)
+					if ident != "" {
+						funcIndex[ident] = node
+					}
+					break
+				}
+			}
+		}
+		
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex
+}
+
+func getOrParseCFile(filePath string) (*cFileCache, error) {
+	
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	
+	cCacheMu.RLock()
+	cached, exists := cCache[filePath]
+	cCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		
+		return cached, nil
+	}
+	
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tsc.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	
+	funcIndex := buildCIndex(root, src)
+	
+	cache := &cFileCache{
+		src:       src,
+		tree:      tree,
+		root:      root,
+		modTime:   modTime,
+		funcIndex: funcIndex,
+	}
+	
+	cCacheMu.Lock()
+	cCache[filePath] = cache
+	cCacheMu.Unlock()
+	return cache, nil
+}
+
+type goFileCache struct {
+	src       []byte
+	tree      *sitter.Tree
+	root      *sitter.Node
+	modTime   time.Time
+	funcIndex map[string]*sitter.Node
+}
+var (
+	goCache   = make(map[string]*goFileCache)
+	goCacheMu sync.RWMutex
+)
+
+func buildGoIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	funcIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "function_declaration" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					funcIndex[name] = node
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex
+}
+
+func getOrParseGoFile(filePath string) (*goFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	goCacheMu.RLock()
+	cached, exists := goCache[filePath]
+	goCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tsgolang.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	funcIndex := buildGoIndex(root, src)
+	cache := &goFileCache{
+		src:       src,
+		tree:      tree,
+		root:      root,
+		modTime:   modTime,
+		funcIndex: funcIndex,
+	}
+	goCacheMu.Lock()
+	goCache[filePath] = cache
+	goCacheMu.Unlock()
+	return cache, nil
+}
+
+type rustFileCache struct {
+	src       []byte
+	tree      *sitter.Tree
+	root      *sitter.Node
+	modTime   time.Time
+	funcIndex map[string]*sitter.Node
+}
+var (
+	rustCache   = make(map[string]*rustFileCache)
+	rustCacheMu sync.RWMutex
+)
+
+func buildRustIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	funcIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "function_item" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					funcIndex[name] = node
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex
+}
+
+func getOrParseRustFile(filePath string) (*rustFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	rustCacheMu.RLock()
+	cached, exists := rustCache[filePath]
+	rustCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tsrust.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	funcIndex := buildRustIndex(root, src)
+	cache := &rustFileCache{
+		src:       src,
+		tree:      tree,
+		root:      root,
+		modTime:   modTime,
+		funcIndex: funcIndex,
+	}
+	rustCacheMu.Lock()
+	rustCache[filePath] = cache
+	rustCacheMu.Unlock()
+	return cache, nil
+}
+
+type jsFileCache struct {
+	src       []byte
+	tree      *sitter.Tree
+	root      *sitter.Node
+	modTime   time.Time
+	funcIndex map[string]*sitter.Node
+}
+var (
+	jsCache   = make(map[string]*jsFileCache)
+	jsCacheMu sync.RWMutex
+)
+
+func buildJSIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	funcIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "function_declaration" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					funcIndex[name] = node
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex
+}
+
+func getOrParseJSFile(filePath string) (*jsFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	jsCacheMu.RLock()
+	cached, exists := jsCache[filePath]
+	jsCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tsjs.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	funcIndex := buildJSIndex(root, src)
+	cache := &jsFileCache{
+		src:       src,
+		tree:      tree,
+		root:      root,
+		modTime:   modTime,
+		funcIndex: funcIndex,
+	}
+	jsCacheMu.Lock()
+	jsCache[filePath] = cache
+	jsCacheMu.Unlock()
+	return cache, nil
+}
+
+type tsFileCache struct {
+	src       []byte
+	tree      *sitter.Tree
+	root      *sitter.Node
+	modTime   time.Time
+	funcIndex map[string]*sitter.Node
+}
+var (
+	tsCache   = make(map[string]*tsFileCache)
+	tsCacheMu sync.RWMutex
+)
+
+func buildTSIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	funcIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "function_declaration" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					funcIndex[name] = node
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex
+}
+
+func getOrParseTSFile(filePath string) (*tsFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	tsCacheMu.RLock()
+	cached, exists := tsCache[filePath]
+	tsCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tsts.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	funcIndex := buildTSIndex(root, src)
+	cache := &tsFileCache{
+		src:       src,
+		tree:      tree,
+		root:      root,
+		modTime:   modTime,
+		funcIndex: funcIndex,
+	}
+	tsCacheMu.Lock()
+	tsCache[filePath] = cache
+	tsCacheMu.Unlock()
+	return cache, nil
+}
+
+type cppFileCache struct {
+	src         []byte
+	tree        *sitter.Tree
+	root        *sitter.Node
+	modTime     time.Time
+	funcIndex   map[string]*sitter.Node
+	methodIndex map[string]*sitter.Node
+}
+var (
+	cppCache   = make(map[string]*cppFileCache)
+	cppCacheMu sync.RWMutex
+)
+
+func buildCppIndex(root *sitter.Node, src []byte) (funcIndex, methodIndex map[string]*sitter.Node) {
+	funcIndex = make(map[string]*sitter.Node)
+	methodIndex = make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "function_definition" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "function_declarator" {
+					ident := extractCppIdentifierFromDeclarator(ch, src)
+					if ident != "" {
+						
+						
+						funcIndex[ident] = node
+						methodIndex[ident] = node
+					}
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return funcIndex, methodIndex
+}
+
+func getOrParseCppFile(filePath string) (*cppFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	cppCacheMu.RLock()
+	cached, exists := cppCache[filePath]
+	cppCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tscpp.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	funcIndex, methodIndex := buildCppIndex(root, src)
+	cache := &cppFileCache{
+		src:         src,
+		tree:        tree,
+		root:        root,
+		modTime:     modTime,
+		funcIndex:   funcIndex,
+		methodIndex: methodIndex,
+	}
+	cppCacheMu.Lock()
+	cppCache[filePath] = cache
+	cppCacheMu.Unlock()
+	return cache, nil
+}
+
+type csharpFileCache struct {
+	src         []byte
+	tree        *sitter.Tree
+	root        *sitter.Node
+	modTime     time.Time
+	methodIndex map[string]*sitter.Node
+}
+var (
+	csharpCache   = make(map[string]*csharpFileCache)
+	csharpCacheMu sync.RWMutex
+)
+
+func buildCSharpIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	methodIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "method_declaration" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					methodIndex[name] = node
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return methodIndex
+}
+
+func getOrParseCSharpFile(filePath string) (*csharpFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	csharpCacheMu.RLock()
+	cached, exists := csharpCache[filePath]
+	csharpCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tscsharp.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	methodIndex := buildCSharpIndex(root, src)
+	cache := &csharpFileCache{
+		src:         src,
+		tree:        tree,
+		root:        root,
+		modTime:     modTime,
+		methodIndex: methodIndex,
+	}
+	csharpCacheMu.Lock()
+	csharpCache[filePath] = cache
+	csharpCacheMu.Unlock()
+	return cache, nil
+}
+
+type javaFileCache struct {
+	src         []byte
+	tree        *sitter.Tree
+	root        *sitter.Node
+	modTime     time.Time
+	methodIndex map[string]*sitter.Node
+}
+var (
+	javaCache   = make(map[string]*javaFileCache)
+	javaCacheMu sync.RWMutex
+)
+
+func buildJavaIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	methodIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "method_declaration" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					methodIndex[name] = node
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return methodIndex
+}
+
+func getOrParseJavaFile(filePath string) (*javaFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	javaCacheMu.RLock()
+	cached, exists := javaCache[filePath]
+	javaCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tsjava.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	methodIndex := buildJavaIndex(root, src)
+	cache := &javaFileCache{
+		src:         src,
+		tree:        tree,
+		root:        root,
+		modTime:     modTime,
+		methodIndex: methodIndex,
+	}
+	javaCacheMu.Lock()
+	javaCache[filePath] = cache
+	javaCacheMu.Unlock()
+	return cache, nil
+}
+
+type rubyFileCache struct {
+	src         []byte
+	tree        *sitter.Tree
+	root        *sitter.Node
+	modTime     time.Time
+	methodIndex map[string]*sitter.Node
+}
+var (
+	rubyCache   = make(map[string]*rubyFileCache)
+	rubyCacheMu sync.RWMutex
+)
+
+func buildRubyIndex(root *sitter.Node, src []byte) map[string]*sitter.Node {
+	methodIndex := make(map[string]*sitter.Node)
+	var traverse func(*sitter.Node)
+	traverse = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		if node.Type() == "method" {
+			for i := 0; i < int(node.ChildCount()); i++ {
+				ch := node.Child(i)
+				if ch.Type() == "identifier" {
+					name := string(src[ch.StartByte():ch.EndByte()])
+					methodIndex[name] = node
+					break
+				}
+			}
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			traverse(node.Child(i))
+		}
+	}
+	traverse(root)
+	return methodIndex
+}
+
+func getOrParseRubyFile(filePath string) (*rubyFileCache, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	modTime := fileInfo.ModTime()
+	rubyCacheMu.RLock()
+	cached, exists := rubyCache[filePath]
+	rubyCacheMu.RUnlock()
+	if exists && cached.modTime.Equal(modTime) {
+		return cached, nil
+	}
+	src, err := TrackedReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	p := sitter.NewParser()
+	p.SetLanguage(tsruby.GetLanguage())
+	tree := p.Parse(nil, src)
+	root := tree.RootNode()
+	methodIndex := buildRubyIndex(root, src)
+	cache := &rubyFileCache{
+		src:         src,
+		tree:        tree,
+		root:        root,
+		modTime:     modTime,
+		methodIndex: methodIndex,
+	}
+	rubyCacheMu.Lock()
+	rubyCache[filePath] = cache
+	rubyCacheMu.Unlock()
+	return cache, nil
+}
+func TSFindPHPFunction(filePath string, name string) (signature string, body string, err error) {
+	cache, err := getOrParsePHPFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsphp.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	md := findPHPMethodByNameNode(root, src, methodName)
-	if md == nil {
-		return "", "", fmt.Errorf("method %s not found", methodName)
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
+		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[md.StartByte():md.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -73,9 +876,31 @@ func TSFindPHPMethod(filePath string, methodName string) (signature string, body
 	}
 	return signature, body, nil
 }
-
+func TSFindPHPMethod(filePath string, methodName string) (signature string, body string, err error) {
+	cache, err := getOrParsePHPFile(filePath)
+	if err != nil {
+		return "", "", err
+	}
+	
+	md, exists := cache.methodIndex[methodName]
+	if !exists || md == nil {
+		return "", "", fmt.Errorf("method %s not found", methodName)
+	}
+	text := string(cache.src[md.StartByte():md.EndByte()])
+	idx := strings.Index(text, "{")
+	if idx > 0 {
+		signature = strings.TrimSpace(text[:idx])
+		endIdx := strings.LastIndex(text, "}")
+		if endIdx > idx+1 {
+			body = strings.TrimRight(text[idx+1:endIdx], "\n\r ")
+		}
+	} else {
+		signature = strings.TrimSpace(text)
+	}
+	return signature, body, nil
+}
 func TSListPHPFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +913,6 @@ func TSListPHPFunctions(filePath string) ([]string, error) {
 	collectPHPFunctions(root, src, &out)
 	return out, nil
 }
-
 func collectPHPFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -106,7 +930,6 @@ func collectPHPFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectPHPFunctions(node.Child(i), src, out)
 	}
 }
-
 func findPHPFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -129,7 +952,6 @@ func findPHPFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitt
 	}
 	return nil
 }
-
 func findPHPMethodByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -152,22 +974,17 @@ func findPHPMethodByNameNode(node *sitter.Node, src []byte, name string) *sitter
 	}
 	return nil
 }
-
 func TSFindPythonFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParsePythonFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	lang := tspy.GetLanguage()
-	p := sitter.NewParser()
-	p.SetLanguage(lang)
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findPyFunctionByNameNode(root, src, name)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
 		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	if nl := strings.IndexAny(text, "\n\r"); nl > 0 {
 		signature = strings.TrimRight(text[:nl], "\r")
 		body = strings.TrimLeft(text[nl+1:], "\n\r")
@@ -176,9 +993,8 @@ func TSFindPythonFunction(filePath string, name string) (signature string, body 
 	}
 	return signature, body, nil
 }
-
 func TSListPythonFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +1007,6 @@ func TSListPythonFunctions(filePath string) ([]string, error) {
 	collectPyFunctions(root, src, &out)
 	return out, nil
 }
-
 func collectPyFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -209,22 +1024,20 @@ func collectPyFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectPyFunctions(node.Child(i), src, out)
 	}
 }
-
 func TSListCalledFunctionsPHP(filePath string, funcName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	
+	cache, err := getOrParsePHPFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsphp.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findPHPFunctionByNameNode(root, src, funcName)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[funcName]
+	if !exists || fn == nil {
 		return nil, nil, fmt.Errorf("function %s not found", funcName)
 	}
+	
 	var collected []string
-	collectPHPCallNames(fn, src, &collected)
+	collectPHPCallNames(fn, cache.src, &collected)
 	seen := map[string]bool{}
 	for _, n := range collected {
 		seen[n] = true
@@ -233,15 +1046,24 @@ func TSListCalledFunctionsPHP(filePath string, funcName string) (names []string,
 	for n := range seen {
 		unique = append(unique, n)
 	}
+	
 	resultBodies := map[string]string{}
 	for _, n := range unique {
-		if sig, body, e := TSFindPHPFunction(filePath, n); e == nil {
+		if fnNode, found := cache.funcIndex[n]; found && fnNode != nil {
+			text := string(cache.src[fnNode.StartByte():fnNode.EndByte()])
+			idx := strings.Index(text, "{")
+			if idx > 0 {
+				sig := strings.TrimSpace(text[:idx])
+				endIdx := strings.LastIndex(text, "}")
+				if endIdx > idx+1 {
+					body := strings.TrimRight(text[idx+1:endIdx], "\n\r ")
 			resultBodies[n] = sig + "\n{\n" + body + "\n}"
+				}
+			}
 		}
 	}
 	return unique, resultBodies, nil
 }
-
 func collectPHPCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -273,7 +1095,6 @@ func collectPHPCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectPHPCallNames(node.Child(i), src, out)
 	}
 }
-
 func phpRightMostIdentifier(node *sitter.Node, src []byte) string {
 	if node == nil {
 		return ""
@@ -286,14 +1107,9 @@ func phpRightMostIdentifier(node *sitter.Node, src []byte) string {
 	}
 	return ""
 }
-
 func detectRepoRootPHP(filePath string) string {
 	dir := filepath.Dir(filePath)
 	for i := 0; i < 8; i++ {
-		base := filepath.Base(dir)
-		if strings.HasPrefix(base, "phpbb_release-") {
-			return dir
-		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			break
@@ -302,7 +1118,6 @@ func detectRepoRootPHP(filePath string) string {
 	}
 	return ""
 }
-
 func scanPHPDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -337,22 +1152,20 @@ func scanPHPDefinitionInRepo(repoRoot string, name string) (signature string, bo
 	}
 	return "", "", false
 }
-
 func TSListCalledFunctionsPHPMethod(filePath string, methodName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	
+	cache, err := getOrParsePHPFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsphp.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	md := findPHPMethodByNameNode(root, src, methodName)
-	if md == nil {
+	
+	md, exists := cache.methodIndex[methodName]
+	if !exists || md == nil {
 		return nil, nil, fmt.Errorf("method %s not found", methodName)
 	}
+	
 	var collected []string
-	collectPHPCallNames(md, src, &collected)
+	collectPHPCallNames(md, cache.src, &collected)
 	seen := map[string]bool{}
 	for _, n := range collected {
 		seen[n] = true
@@ -361,16 +1174,38 @@ func TSListCalledFunctionsPHPMethod(filePath string, methodName string) (names [
 	for n := range seen {
 		unique = append(unique, n)
 	}
+	
 	resultBodies := map[string]string{}
 	for _, n := range unique {
-		if sig, body, e := TSFindPHPFunction(filePath, n); e == nil {
+		
+		if fnNode, found := cache.funcIndex[n]; found && fnNode != nil {
+			text := string(cache.src[fnNode.StartByte():fnNode.EndByte()])
+			idx := strings.Index(text, "{")
+			if idx > 0 {
+				sig := strings.TrimSpace(text[:idx])
+				endIdx := strings.LastIndex(text, "}")
+				if endIdx > idx+1 {
+					body := strings.TrimRight(text[idx+1:endIdx], "\n\r ")
 			resultBodies[n] = sig + "\n{\n" + body + "\n}"
 			continue
 		}
-		if sig, body, e := TSFindPHPMethod(filePath, n); e == nil {
+			}
+		}
+		
+		if mdNode, found := cache.methodIndex[n]; found && mdNode != nil {
+			text := string(cache.src[mdNode.StartByte():mdNode.EndByte()])
+			idx := strings.Index(text, "{")
+			if idx > 0 {
+				sig := strings.TrimSpace(text[:idx])
+				endIdx := strings.LastIndex(text, "}")
+				if endIdx > idx+1 {
+					body := strings.TrimRight(text[idx+1:endIdx], "\n\r ")
 			resultBodies[n] = sig + "\n{\n" + body + "\n}"
 			continue
 		}
+			}
+		}
+		
 		if root := detectRepoRootPHP(filePath); root != "" {
 			if s, b, ok := scanPHPDefinitionInRepo(root, n); ok {
 				resultBodies[n] = s + "\n{\n" + b + "\n}"
@@ -379,9 +1214,8 @@ func TSListCalledFunctionsPHPMethod(filePath string, methodName string) (names [
 	}
 	return unique, resultBodies, nil
 }
-
 func TSListCalledFunctionsPython(filePath string, funcName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -411,7 +1245,6 @@ func TSListCalledFunctionsPython(filePath string, funcName string) (names []stri
 	}
 	return unique, resultBodies, nil
 }
-
 func collectPyCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -429,7 +1262,6 @@ func collectPyCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectPyCallNames(node.Child(i), src, out)
 	}
 }
-
 func rightMostIdentifier(node *sitter.Node, src []byte) string {
 	if node == nil {
 		return ""
@@ -442,7 +1274,6 @@ func rightMostIdentifier(node *sitter.Node, src []byte) string {
 	}
 	return ""
 }
-
 func findPyFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -465,9 +1296,8 @@ func findPyFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitte
 	}
 	return nil
 }
-
 func TSListPHPMethodsInFile(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +1310,6 @@ func TSListPHPMethodsInFile(filePath string) ([]string, error) {
 	collectPHPMethods(root, src, &out)
 	return out, nil
 }
-
 func collectPHPMethods(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -498,21 +1327,17 @@ func collectPHPMethods(node *sitter.Node, src []byte, out *[]string) {
 		collectPHPMethods(node.Child(i), src, out)
 	}
 }
-
 func TSFindCFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseCFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsc.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findCFunctionByNameNode(root, src, name)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
 		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -525,9 +1350,8 @@ func TSFindCFunction(filePath string, name string) (signature string, body strin
 	}
 	return signature, body, nil
 }
-
 func TSListCFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -539,9 +1363,8 @@ func TSListCFunctions(filePath string) ([]string, error) {
 	collectCFunctions(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsC(filePath string, funcName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -577,7 +1400,6 @@ func TSListCalledFunctionsC(filePath string, funcName string) (names []string, b
 	}
 	return unique, resultBodies, nil
 }
-
 func scanCDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -608,7 +1430,6 @@ func scanCDefinitionInRepo(repoRoot string, name string) (signature string, body
 	}
 	return "", "", false
 }
-
 func findCFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -631,7 +1452,6 @@ func findCFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter
 	}
 	return nil
 }
-
 func extractCIdentifierFromDeclarator(node *sitter.Node, src []byte) string {
 	if node == nil {
 		return ""
@@ -646,7 +1466,6 @@ func extractCIdentifierFromDeclarator(node *sitter.Node, src []byte) string {
 	}
 	return ""
 }
-
 func collectCFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -667,7 +1486,6 @@ func collectCFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectCFunctions(node.Child(i), src, out)
 	}
 }
-
 func collectCCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -685,21 +1503,17 @@ func collectCCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectCCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindCppFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseCppFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tscpp.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findCppFunctionByNameNode(root, src, name)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
 		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -712,21 +1526,17 @@ func TSFindCppFunction(filePath string, name string) (signature string, body str
 	}
 	return signature, body, nil
 }
-
 func TSFindCppMethod(filePath string, methodName string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseCppFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tscpp.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	md := findCppMethodByNameNode(root, src, methodName)
-	if md == nil {
+	
+	md, exists := cache.methodIndex[methodName]
+	if !exists || md == nil {
 		return "", "", fmt.Errorf("method %s not found", methodName)
 	}
-	text := string(src[md.StartByte():md.EndByte()])
+	text := string(cache.src[md.StartByte():md.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -739,9 +1549,8 @@ func TSFindCppMethod(filePath string, methodName string) (signature string, body
 	}
 	return signature, body, nil
 }
-
 func TSListCppFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -753,9 +1562,8 @@ func TSListCppFunctions(filePath string) ([]string, error) {
 	collectCppFunctions(root, src, &out)
 	return out, nil
 }
-
 func TSListCppMethods(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -767,9 +1575,8 @@ func TSListCppMethods(filePath string) ([]string, error) {
 	collectCppMethods(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsCpp(filePath string, methodName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -813,7 +1620,6 @@ func TSListCalledFunctionsCpp(filePath string, methodName string) (names []strin
 	}
 	return unique, resultBodies, nil
 }
-
 func scanCppDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -849,7 +1655,6 @@ func scanCppDefinitionInRepo(repoRoot string, name string) (signature string, bo
 	}
 	return "", "", false
 }
-
 func findCppFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -872,7 +1677,6 @@ func findCppFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitt
 	}
 	return nil
 }
-
 func findCppMethodByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -895,7 +1699,6 @@ func findCppMethodByNameNode(node *sitter.Node, src []byte, name string) *sitter
 	}
 	return nil
 }
-
 func extractCppIdentifierFromDeclarator(node *sitter.Node, src []byte) string {
 	if node == nil {
 		return ""
@@ -913,7 +1716,6 @@ func extractCppIdentifierFromDeclarator(node *sitter.Node, src []byte) string {
 	}
 	return ""
 }
-
 func collectCppFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -934,7 +1736,6 @@ func collectCppFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectCppFunctions(node.Child(i), src, out)
 	}
 }
-
 func collectCppMethods(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -955,7 +1756,6 @@ func collectCppMethods(node *sitter.Node, src []byte, out *[]string) {
 		collectCppMethods(node.Child(i), src, out)
 	}
 }
-
 func collectCppCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -979,21 +1779,17 @@ func collectCppCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectCppCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindCSharpMethod(filePath string, methodName string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseCSharpFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tscsharp.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	md := findCSharpMethodByNameNode(root, src, methodName)
-	if md == nil {
+	
+	md, exists := cache.methodIndex[methodName]
+	if !exists || md == nil {
 		return "", "", fmt.Errorf("method %s not found", methodName)
 	}
-	text := string(src[md.StartByte():md.EndByte()])
+	text := string(cache.src[md.StartByte():md.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -1006,9 +1802,8 @@ func TSFindCSharpMethod(filePath string, methodName string) (signature string, b
 	}
 	return signature, body, nil
 }
-
 func TSListCSharpMethods(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1020,9 +1815,8 @@ func TSListCSharpMethods(filePath string) ([]string, error) {
 	collectCSharpMethods(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsCSharp(filePath string, methodName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1058,7 +1852,6 @@ func TSListCalledFunctionsCSharp(filePath string, methodName string) (names []st
 	}
 	return unique, resultBodies, nil
 }
-
 func scanCSharpDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -1089,7 +1882,6 @@ func scanCSharpDefinitionInRepo(repoRoot string, name string) (signature string,
 	}
 	return "", "", false
 }
-
 func findCSharpMethodByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -1112,7 +1904,6 @@ func findCSharpMethodByNameNode(node *sitter.Node, src []byte, name string) *sit
 	}
 	return nil
 }
-
 func collectCSharpMethods(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1130,7 +1921,6 @@ func collectCSharpMethods(node *sitter.Node, src []byte, out *[]string) {
 		collectCSharpMethods(node.Child(i), src, out)
 	}
 }
-
 func collectCSharpCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1154,21 +1944,17 @@ func collectCSharpCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectCSharpCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindGoFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseGoFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsgolang.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findGoFunctionByNameNode(root, src, name)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
 		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -1181,9 +1967,8 @@ func TSFindGoFunction(filePath string, name string) (signature string, body stri
 	}
 	return signature, body, nil
 }
-
 func TSListGoFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1195,9 +1980,8 @@ func TSListGoFunctions(filePath string) ([]string, error) {
 	collectGoFunctions(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsGo(filePath string, funcName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1233,7 +2017,6 @@ func TSListCalledFunctionsGo(filePath string, funcName string) (names []string, 
 	}
 	return unique, resultBodies, nil
 }
-
 func scanGoDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -1264,7 +2047,6 @@ func scanGoDefinitionInRepo(repoRoot string, name string) (signature string, bod
 	}
 	return "", "", false
 }
-
 func findGoFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -1287,7 +2069,6 @@ func findGoFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitte
 	}
 	return nil
 }
-
 func collectGoFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1305,7 +2086,6 @@ func collectGoFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectGoFunctions(node.Child(i), src, out)
 	}
 }
-
 func collectGoCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1329,21 +2109,17 @@ func collectGoCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectGoCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindJavaMethod(filePath string, methodName string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseJavaFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsjava.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	md := findJavaMethodByNameNode(root, src, methodName)
-	if md == nil {
+	
+	md, exists := cache.methodIndex[methodName]
+	if !exists || md == nil {
 		return "", "", fmt.Errorf("method %s not found", methodName)
 	}
-	text := string(src[md.StartByte():md.EndByte()])
+	text := string(cache.src[md.StartByte():md.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -1356,9 +2132,8 @@ func TSFindJavaMethod(filePath string, methodName string) (signature string, bod
 	}
 	return signature, body, nil
 }
-
 func TSListJavaMethods(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1370,9 +2145,8 @@ func TSListJavaMethods(filePath string) ([]string, error) {
 	collectJavaMethods(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsJava(filePath string, methodName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1408,7 +2182,6 @@ func TSListCalledFunctionsJava(filePath string, methodName string) (names []stri
 	}
 	return unique, resultBodies, nil
 }
-
 func scanJavaDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -1439,7 +2212,6 @@ func scanJavaDefinitionInRepo(repoRoot string, name string) (signature string, b
 	}
 	return "", "", false
 }
-
 func findJavaMethodByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -1462,7 +2234,6 @@ func findJavaMethodByNameNode(node *sitter.Node, src []byte, name string) *sitte
 	}
 	return nil
 }
-
 func collectJavaMethods(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1480,7 +2251,6 @@ func collectJavaMethods(node *sitter.Node, src []byte, out *[]string) {
 		collectJavaMethods(node.Child(i), src, out)
 	}
 }
-
 func collectJavaCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1504,21 +2274,17 @@ func collectJavaCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectJavaCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindJSFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseJSFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsjs.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findJSFunctionByNameNode(root, src, name)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
 		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -1531,9 +2297,8 @@ func TSFindJSFunction(filePath string, name string) (signature string, body stri
 	}
 	return signature, body, nil
 }
-
 func TSListJSFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1545,9 +2310,8 @@ func TSListJSFunctions(filePath string) ([]string, error) {
 	collectJSFunctions(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsJS(filePath string, funcName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1583,7 +2347,6 @@ func TSListCalledFunctionsJS(filePath string, funcName string) (names []string, 
 	}
 	return unique, resultBodies, nil
 }
-
 func scanJSDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -1615,7 +2378,6 @@ func scanJSDefinitionInRepo(repoRoot string, name string) (signature string, bod
 	}
 	return "", "", false
 }
-
 func findJSFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -1638,7 +2400,6 @@ func findJSFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitte
 	}
 	return nil
 }
-
 func collectJSFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1656,7 +2417,6 @@ func collectJSFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectJSFunctions(node.Child(i), src, out)
 	}
 }
-
 func collectJSCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1680,21 +2440,17 @@ func collectJSCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectJSCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindRubyMethod(filePath string, methodName string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseRubyFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsruby.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	md := findRubyMethodByNameNode(root, src, methodName)
-	if md == nil {
+	
+	md, exists := cache.methodIndex[methodName]
+	if !exists || md == nil {
 		return "", "", fmt.Errorf("method %s not found", methodName)
 	}
-	text := string(src[md.StartByte():md.EndByte()])
+	text := string(cache.src[md.StartByte():md.EndByte()])
 	if nl := strings.IndexAny(text, "\n\r"); nl > 0 {
 		signature = strings.TrimRight(text[:nl], "\r")
 		endStr := "end"
@@ -1707,9 +2463,8 @@ func TSFindRubyMethod(filePath string, methodName string) (signature string, bod
 	}
 	return signature, body, nil
 }
-
 func TSListRubyMethods(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1721,9 +2476,8 @@ func TSListRubyMethods(filePath string) ([]string, error) {
 	collectRubyMethods(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsRuby(filePath string, methodName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1759,7 +2513,6 @@ func TSListCalledFunctionsRuby(filePath string, methodName string) (names []stri
 	}
 	return unique, resultBodies, nil
 }
-
 func scanRubyDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -1790,7 +2543,6 @@ func scanRubyDefinitionInRepo(repoRoot string, name string) (signature string, b
 	}
 	return "", "", false
 }
-
 func findRubyMethodByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -1813,7 +2565,6 @@ func findRubyMethodByNameNode(node *sitter.Node, src []byte, name string) *sitte
 	}
 	return nil
 }
-
 func collectRubyMethods(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1831,7 +2582,6 @@ func collectRubyMethods(node *sitter.Node, src []byte, out *[]string) {
 		collectRubyMethods(node.Child(i), src, out)
 	}
 }
-
 func collectRubyCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -1849,21 +2599,17 @@ func collectRubyCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectRubyCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindRustFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseRustFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsrust.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findRustFunctionByNameNode(root, src, name)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
 		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -1876,9 +2622,8 @@ func TSFindRustFunction(filePath string, name string) (signature string, body st
 	}
 	return signature, body, nil
 }
-
 func TSListRustFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1890,9 +2635,8 @@ func TSListRustFunctions(filePath string) ([]string, error) {
 	collectRustFunctions(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsRust(filePath string, funcName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1928,7 +2672,6 @@ func TSListCalledFunctionsRust(filePath string, funcName string) (names []string
 	}
 	return unique, resultBodies, nil
 }
-
 func scanRustDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -1959,7 +2702,6 @@ func scanRustDefinitionInRepo(repoRoot string, name string) (signature string, b
 	}
 	return "", "", false
 }
-
 func findRustFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -1982,7 +2724,6 @@ func findRustFunctionByNameNode(node *sitter.Node, src []byte, name string) *sit
 	}
 	return nil
 }
-
 func collectRustFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -2000,7 +2741,6 @@ func collectRustFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectRustFunctions(node.Child(i), src, out)
 	}
 }
-
 func collectRustCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -2024,21 +2764,17 @@ func collectRustCallNames(node *sitter.Node, src []byte, out *[]string) {
 		collectRustCallNames(node.Child(i), src, out)
 	}
 }
-
 func TSFindTSFunction(filePath string, name string) (signature string, body string, err error) {
-	src, err := os.ReadFile(filePath)
+	cache, err := getOrParseTSFile(filePath)
 	if err != nil {
 		return "", "", err
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(tsts.GetLanguage())
-	tree := p.Parse(nil, src)
-	root := tree.RootNode()
-	fn := findTSFunctionByNameNode(root, src, name)
-	if fn == nil {
+	
+	fn, exists := cache.funcIndex[name]
+	if !exists || fn == nil {
 		return "", "", fmt.Errorf("function %s not found", name)
 	}
-	text := string(src[fn.StartByte():fn.EndByte()])
+	text := string(cache.src[fn.StartByte():fn.EndByte()])
 	idx := strings.Index(text, "{")
 	if idx > 0 {
 		signature = strings.TrimSpace(text[:idx])
@@ -2051,9 +2787,8 @@ func TSFindTSFunction(filePath string, name string) (signature string, body stri
 	}
 	return signature, body, nil
 }
-
 func TSListTSFunctions(filePath string) ([]string, error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -2065,9 +2800,8 @@ func TSListTSFunctions(filePath string) ([]string, error) {
 	collectTSFunctions(root, src, &out)
 	return out, nil
 }
-
 func TSListCalledFunctionsTS(filePath string, funcName string) (names []string, bodies map[string]string, err error) {
-	src, err := os.ReadFile(filePath)
+	src, err := TrackedReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2103,7 +2837,6 @@ func TSListCalledFunctionsTS(filePath string, funcName string) (names []string, 
 	}
 	return unique, resultBodies, nil
 }
-
 func scanTSDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -2135,7 +2868,6 @@ func scanTSDefinitionInRepo(repoRoot string, name string) (signature string, bod
 	}
 	return "", "", false
 }
-
 func findTSFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitter.Node {
 	if node == nil {
 		return nil
@@ -2158,7 +2890,6 @@ func findTSFunctionByNameNode(node *sitter.Node, src []byte, name string) *sitte
 	}
 	return nil
 }
-
 func collectTSFunctions(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
@@ -2176,7 +2907,6 @@ func collectTSFunctions(node *sitter.Node, src []byte, out *[]string) {
 		collectTSFunctions(node.Child(i), src, out)
 	}
 }
-
 func collectTSCallNames(node *sitter.Node, src []byte, out *[]string) {
 	if node == nil {
 		return
