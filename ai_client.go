@@ -1,30 +1,23 @@
 package main
-
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
-
 const (
 	MaxRetryAttempts = 3
 	RateLimitBackoff = 2
 	MaxBackoffTime   = 60
 )
-
 type AIServiceClient struct {
 	config  *Config
 	service string
 	timeout time.Duration
 }
-
 func NewAIServiceClient(config *Config) *AIServiceClient {
 	return &AIServiceClient{
 		config:  config,
@@ -32,41 +25,28 @@ func NewAIServiceClient(config *Config) *AIServiceClient {
 		timeout: 0,
 	}
 }
-
 func (client *AIServiceClient) GenerateResponse(prompt string) string {
 	temperature, _ := client.config.Parameters["temperature"].(float64)
 	maxTokens, _ := client.config.Parameters["num_ctx"].(int)
 	if maxTokens == 0 {
 		maxTokens = 8192
 	}
-	promptLength := len(prompt)
 	previewLength := 500
 	preview := prompt
 	if len(preview) > previewLength {
 		preview = preview[:previewLength] + "..."
 	}
-	log.Printf("=== AI PROMPT (Full) ===")
-	log.Printf("Service: %s, Length: %d chars, Max Tokens: %d", client.service, promptLength, maxTokens)
-	log.Printf("Preview (first %d chars):\n%s", previewLength, preview)
 	if strings.Contains(prompt, "=== Function Context ===") {
 		contextStart := strings.Index(prompt, "=== Function Context ===")
 		contextEnd := strings.Index(prompt, "=== End Function Context ===")
 		if contextEnd > contextStart {
-			contextSection := prompt[contextStart : contextEnd+len("=== End Function Context ===")]
-			log.Printf("Function Context Found (%d chars):\n%s", len(contextSection), contextSection)
+			_ = prompt[contextStart : contextEnd+len("=== End Function Context ===")]
 		}
-	} else {
-		log.Printf("WARNING: No function context found in prompt!")
 	}
-	log.Printf("=== Full Prompt (complete) ===")
-	log.Printf("%s", prompt)
-	log.Printf("=== End Full Prompt ===")
 	for retry := 0; retry < MaxRetryAttempts; retry++ {
 		var response string
 		var err error
-		if client.aiIOLogEnabled() {
-			client.aiIOLog("PROMPT", prompt, retry)
-		}
+
 		switch client.service {
 		case "ollama":
 			response, err = client.ollamaRequest(prompt, temperature, maxTokens)
@@ -90,106 +70,12 @@ func (client *AIServiceClient) GenerateResponse(prompt string) string {
 				time.Sleep(time.Duration(backoff) * time.Second)
 				continue
 			}
-			log.Printf("AI Request Error (retry %d): %v", retry+1, err)
-			if client.aiIOLogEnabled() {
-				client.aiIOLog("ERROR", fmt.Sprintf("%v", err), retry)
-			}
 			return fmt.Sprintf("Error: %v", err)
 		}
-		log.Printf("AI Response received (length: %d chars)", len(response))
-		if client.aiIOLogEnabled() {
-			client.aiIOLog("RESPONSE", response, retry)
-		}
+
 		return response
 	}
 	return "Maximum retry attempts exceeded"
-}
-
-func (client *AIServiceClient) aiIOLogEnabled() bool {
-	if client == nil || client.config == nil || client.config.Parameters == nil {
-		return false
-	}
-	v, ok := client.config.Parameters["log_ai_io"]
-	if !ok {
-		return false
-	}
-	b, _ := v.(bool)
-	return b
-}
-
-func (client *AIServiceClient) aiIOLogMaxChars() int {
-	if v, ok := client.config.Parameters["ai_log_max_chars"]; ok {
-		switch t := v.(type) {
-		case int:
-			if t > 0 {
-				return t
-			}
-		case float64:
-			if int(t) > 0 {
-				return int(t)
-			}
-		}
-	}
-	return 0 
-}
-
-func (client *AIServiceClient) aiIOLogFile() string {
-	if v, ok := client.config.Parameters["ai_log_file"].(string); ok && v != "" {
-		return v
-	}
-	return filepath.Join("logs", "ai_payloads.log")
-}
-
-func (client *AIServiceClient) aiIOLog(kind string, content string, attempt int) {
-	max := client.aiIOLogMaxChars()
-	originalLength := len(content)
-	truncated := false
-	
-	if max > 0 && len(content) > max {
-		content = content[:max]
-		truncated = true
-	}
-	
-	path := client.aiIOLogFile()
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	
-	
-	var entry strings.Builder
-	entry.WriteString("=" + strings.Repeat("=", 78) + "=\n")
-	entry.WriteString(fmt.Sprintf("TIMESTAMP: %s\n", timestamp))
-	entry.WriteString(fmt.Sprintf("SERVICE:   %s\n", client.service))
-	entry.WriteString(fmt.Sprintf("ATTEMPT:   %d\n", attempt+1))
-	entry.WriteString(fmt.Sprintf("TYPE:      %s\n", kind))
-	entry.WriteString(fmt.Sprintf("LENGTH:    %d characters", originalLength))
-	
-	if truncated {
-		entry.WriteString(fmt.Sprintf(" (truncated to %d)\n", max))
-	} else {
-		entry.WriteString("\n")
-	}
-	
-	entry.WriteString("=" + strings.Repeat("=", 78) + "=\n\n")
-	entry.WriteString(content)
-	entry.WriteString("\n\n")
-	
-	if truncated {
-		entry.WriteString(fmt.Sprintf("\n[... TRUNCATED - Original length: %d characters ...]\n\n", originalLength))
-	}
-	
-	entry.WriteString(strings.Repeat("-", 80) + "\n\n")
-	
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Printf("Warning: Failed to write to AI log file: %v", err)
-		return
-	}
-	defer f.Close()
-	
-	if _, err := f.WriteString(entry.String()); err != nil {
-		log.Printf("Warning: Failed to write to AI log: %v", err)
-	}
 }
 
 func (client *AIServiceClient) doHTTPRequest(url string, headers map[string]string, body []byte) ([]byte, error) {
@@ -218,7 +104,6 @@ func (client *AIServiceClient) doHTTPRequest(url string, headers map[string]stri
 	}
 	return respBody, nil
 }
-
 func (client *AIServiceClient) ollamaRequest(prompt string, temperature float64, maxTokens int) (string, error) {
 	url, _ := client.config.Ollama["url"].(string)
 	model, _ := client.config.Ollama["model"].(string)
@@ -246,7 +131,6 @@ func (client *AIServiceClient) ollamaRequest(prompt string, temperature float64,
 	}
 	return "No AI response", nil
 }
-
 func (client *AIServiceClient) openAIRequest(prompt string, temperature float64, maxTokens int) (string, error) {
 	baseURL, _ := client.config.OpenAI["base_url"].(string)
 	model, _ := client.config.OpenAI["model"].(string)
@@ -283,7 +167,6 @@ func (client *AIServiceClient) openAIRequest(prompt string, temperature float64,
 	}
 	return "No AI response", nil
 }
-
 func (client *AIServiceClient) deepSeekRequest(prompt string, temperature float64, maxTokens int) (string, error) {
 	baseURL, _ := client.config.DeepSeek["base_url"].(string)
 	model, _ := client.config.DeepSeek["model"].(string)
@@ -320,7 +203,6 @@ func (client *AIServiceClient) deepSeekRequest(prompt string, temperature float6
 	}
 	return "No AI response", nil
 }
-
 func (client *AIServiceClient) claudeRequest(prompt string, temperature float64, maxTokens int) (string, error) {
 	baseURL, _ := client.config.Claude["base_url"].(string)
 	model, _ := client.config.Claude["model"].(string)
@@ -356,7 +238,6 @@ func (client *AIServiceClient) claudeRequest(prompt string, temperature float64,
 	}
 	return "No AI response", nil
 }
-
 func calculateBackoff(retryCount int) int {
 	if retryCount <= 10 {
 		backoff := 1
@@ -374,59 +255,21 @@ func calculateBackoff(retryCount int) int {
 	}
 	return backoff
 }
-
 func GetAIAnalysis(filePath, diffContent string) string {
 	if config == nil {
 		return "AI configuration not loaded"
 	}
-	startTime := time.Now()
 	prompt := strings.ReplaceAll(config.Prompts["main_analysis"], "{file_path}", filePath)
 	prompt = strings.ReplaceAll(prompt, "{diff_content}", diffContent)
-	log.Printf("=== GetAIAnalysis called ===")
-	log.Printf("File: %s", filePath)
-	log.Printf("Diff content length: %d chars", len(diffContent))
-	log.Printf("Final prompt length: %d chars", len(prompt))
 	if strings.Contains(diffContent, "=== Function Context ===") {
-		log.Printf("✓ Function context is included in diffContent")
 	} else {
-		log.Printf("⚠ Function context NOT found in diffContent - this may be expected if no context was extracted")
 	}
 	client := NewAIServiceClient(config)
-	
-	
-	if client.aiIOLogEnabled() {
-		metadata := fmt.Sprintf("ANALYSIS METADATA\n"+
-			"File Path: %s\n"+
-			"Timestamp: %s\n"+
-			"Prompt Template: main_analysis\n"+
-			"Diff Length: %d chars\n"+
-			"Function Context: %v\n",
-			filePath,
-			time.Now().Format("2006-01-02 15:04:05"),
-			len(diffContent),
-			strings.Contains(diffContent, "=== Function Context ==="))
-		client.aiIOLog("METADATA", metadata, 0)
-	}
-	
+
 	response := client.GenerateResponse(prompt)
-	duration := time.Since(startTime)
-	log.Printf("GetAIAnalysis completed in %v", duration)
-	
-	
-	if client.aiIOLogEnabled() {
-		completionMeta := fmt.Sprintf("ANALYSIS COMPLETION\n"+
-			"File Path: %s\n"+
-			"Duration: %v\n"+
-			"Response Length: %d chars\n",
-			filePath,
-			duration,
-			len(response))
-		client.aiIOLog("COMPLETION", completionMeta, 0)
-	}
-	
+
 	return response
 }
-
 func GetCVEDescription(cveID string) string {
 	url := fmt.Sprintf("https://nvd.nist.gov/vuln/detail/%s", cveID)
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -478,32 +321,16 @@ func GetCVEDescription(cveID string) string {
 	}
 	return description
 }
-
 func AnalyzeWithCVE(aiResponse, cveDescription string) string {
 	if config == nil {
 		return "AI configuration not loaded"
 	}
 	prompt := strings.ReplaceAll(config.Prompts["cve_analysis"], "{ai_response}", aiResponse)
 	prompt = strings.ReplaceAll(prompt, "{cve_description}", cveDescription)
-	
 	client := NewAIServiceClient(config)
-	
-	
-	if client.aiIOLogEnabled() {
-		metadata := fmt.Sprintf("CVE ANALYSIS METADATA\n"+
-			"Timestamp: %s\n"+
-			"Prompt Template: cve_analysis\n"+
-			"AI Response Length: %d chars\n"+
-			"CVE Description Length: %d chars\n",
-			time.Now().Format("2006-01-02 15:04:05"),
-			len(aiResponse),
-			len(cveDescription))
-		client.aiIOLog("CVE_METADATA", metadata, 0)
-	}
-	
+
 	return client.GenerateResponse(prompt)
 }
-
 func GenerateCVEWriteup(cveID, cveDescription string, matchingFilesAnalysis []string) string {
 	if config == nil {
 		return "AI configuration not loaded"
@@ -516,30 +343,8 @@ func GenerateCVEWriteup(cveID, cveDescription string, matchingFilesAnalysis []st
 	prompt = strings.ReplaceAll(prompt, "{cve_id}", cveID)
 	prompt = strings.ReplaceAll(prompt, "{cve_description}", cveDescription)
 	prompt = strings.ReplaceAll(prompt, "{all_matching_files_analysis}", allAnalysis)
-	
-	log.Printf("Generating writeup for %s", cveID)
-	
 	client := NewAIServiceClient(config)
-	
-	
-	if client.aiIOLogEnabled() {
-		metadata := fmt.Sprintf("CVE WRITEUP METADATA\n"+
-			"CVE ID: %s\n"+
-			"Timestamp: %s\n"+
-			"Prompt Template: cve_writeup\n"+
-			"Number of Files: %d\n"+
-			"Total Analysis Length: %d chars\n"+
-			"CVE Description Length: %d chars\n",
-			cveID,
-			time.Now().Format("2006-01-02 15:04:05"),
-			len(matchingFilesAnalysis),
-			len(allAnalysis),
-			len(cveDescription))
-		client.aiIOLog("CVE_WRITEUP_METADATA", metadata, 0)
-	}
-	
+
 	writeup := client.GenerateResponse(prompt)
-	log.Printf("Generated writeup for %s (%d chars)", cveID, len(writeup))
-	
 	return writeup
 }
