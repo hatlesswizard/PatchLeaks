@@ -1,16 +1,11 @@
 package main
-
 import (
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 )
-
 func startScheduler() {
 	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
@@ -19,9 +14,7 @@ func startScheduler() {
 		go checkForNewVersions()
 	}
 }
-
 func checkForNewVersions() {
-	log.Println("Checking for new versions in library")
 	library := loadLibrary()
 	type job struct {
 		idx  int
@@ -45,20 +38,14 @@ func checkForNewVersions() {
 		jobs <- job{idx: i, repo: repo}
 	}
 	close(jobs)
-	
-	workerCount := runtime.GOMAXPROCS(0) 
-	if workerCount > 4 {
-		workerCount = 4 
-	}
+	workerCount := *aiThreads
 	var wg sync.WaitGroup
 	for w := 0; w < workerCount; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				
 				ThrottleYield()
-				
 				versions := getGitHubVersionsByDate(j.repo.RepoURL)
 				if len(versions) == 0 {
 					continue
@@ -71,7 +58,6 @@ func checkForNewVersions() {
 				}
 				now := time.Now()
 				if j.repo.LastVersion != nextVersion {
-					log.Printf("New version detected for %s: %s → %s", j.repo.Name, j.repo.LastVersion, nextVersion)
 					if j.repo.LastVersion != "" {
 						triggerAutoAnalysis(j.repo, j.repo.LastVersion, nextVersion)
 					}
@@ -90,12 +76,9 @@ func checkForNewVersions() {
 		}
 	}
 	saveLibrary(library)
-	log.Println("Version check completed")
 }
-
 func triggerAutoAnalysis(repo LibraryRepo, oldVersion, newVersion string) {
 	if !validateVersion(oldVersion) || !validateVersion(newVersion) {
-		log.Printf("Invalid versions for %s: %s -> %s", repo.Name, oldVersion, newVersion)
 		return
 	}
 	params := map[string]interface{}{
@@ -113,22 +96,17 @@ func triggerAutoAnalysis(repo LibraryRepo, oldVersion, newVersion string) {
 	if repo.CPE != "" {
 		params["cpe"] = repo.CPE
 		analysisMode = "cve_auto"
-		log.Printf("Using CVE-based analysis for %s (CPE: %s)", repo.Name, repo.CPE)
 	}
 	analysisID := createNewAnalysisRecord(params, analysisMode, true)
 	go runLibraryAnalysisBackground(analysisID, params, analysisMode)
-	log.Printf("Auto-analysis triggered for %s (%s → %s) using %s mode", repo.Name, oldVersion, newVersion, analysisMode)
 }
-
 func runLibraryAnalysisBackground(analysisID string, params map[string]interface{}, analysisMode string) {
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Library analysis %s panicked: %v", analysisID, r)
 			updateAnalysisStatus(analysisPath, "failed", fmt.Sprintf("%v", r))
 		}
 	}()
-	log.Printf("Library analysis %s started (mode: %s)", analysisID, analysisMode)
 	var results map[string]AnalysisResult
 	switch analysisMode {
 	case "cve_auto":
@@ -136,18 +114,15 @@ func runLibraryAnalysisBackground(analysisID string, params map[string]interface
 	case "library_auto":
 		results = runLibraryAnalysis(params)
 	default:
-		log.Printf("Unknown analysis mode: %s, falling back to library analysis", analysisMode)
 		results = runLibraryAnalysis(params)
 	}
-	data, err := os.ReadFile(analysisPath)
+	data, err := TrackedReadFile(analysisPath)
 	if err != nil {
-		log.Printf("Failed to read analysis file: %v", err)
 		updateAnalysisStatus(analysisPath, "failed", err.Error())
 		return
 	}
 	var analysis Analysis
 	if err := json.Unmarshal(data, &analysis); err != nil {
-		log.Printf("Failed to unmarshal analysis: %v", err)
 		updateAnalysisStatus(analysisPath, "failed", err.Error())
 		return
 	}
@@ -183,23 +158,16 @@ func runLibraryAnalysisBackground(analysisID string, params map[string]interface
 				cveIDsStr = cveIDs
 			}
 			if cveIDsStr != "" && len(results) > 0 {
-				log.Printf("Generating CVE writeups for library analysis %s", analysisID)
 				writeups := generateCVEWriteupsForResults(results, cveIDsStr)
 				if len(writeups) > 0 {
 					analysis.CVEWriteups = writeups
-					log.Printf("Added %d CVE writeups to library analysis", len(writeups))
 				}
 			}
 		}
 	}
 	data, _ = json.MarshalIndent(analysis, "", "  ")
-	if err := os.WriteFile(analysisPath, data, 0644); err != nil {
-		log.Printf("Failed to save analysis: %v", err)
+	if err := TrackedWriteFile(analysisPath, data, 0644); err != nil {
 		return
 	}
-	
-	
 	InvalidateDashboardCache()
-	
-	log.Printf("Library analysis %s completed with %d results", analysisID, len(results))
 }
