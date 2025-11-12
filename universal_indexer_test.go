@@ -1,9 +1,7 @@
 package main
-
 import (
 	"testing"
 )
-
 func TestDetectLanguage(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -75,7 +73,6 @@ func TestDetectLanguage(t *testing.T) {
 		})
 	}
 }
-
 func TestDetectLanguage_PathsWithDirectories(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -96,7 +93,6 @@ func TestDetectLanguage_PathsWithDirectories(t *testing.T) {
 		})
 	}
 }
-
 func TestDetectLanguage_CaseInsensitivity(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -118,7 +114,6 @@ func TestDetectLanguage_CaseInsensitivity(t *testing.T) {
 		})
 	}
 }
-
 func TestDetectLanguage_AllExtensionsUnique(t *testing.T) {
 	testCases := map[string]string{
 		".c":       "c",
@@ -165,7 +160,6 @@ func TestDetectLanguage_AllExtensionsUnique(t *testing.T) {
 		})
 	}
 }
-
 func TestDetectLanguage_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string
