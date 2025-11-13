@@ -599,14 +599,14 @@ func runCVEBasedAnalysis(analysisID string, params map[string]interface{}) map[s
 		return make(map[string]AnalysisResult)
 	}
 	diffs := compareDirectories(oldPath, newPath, extension)
-	results := analyzeDiffsWithCVEs(diffs, specialKeywords, oldCVEs)
+	results := analyzeDiffsWithCVEs(diffs, specialKeywords, oldCVEs, enableAI)
 	if enableAI && len(results) > 0 {
 		cveIDsStr, _ := params["cve_ids"].(string)
 		results = runAIAnalysisOnResults(results, cveIDsStr, *aiThreads, newPath)
 	}
 	return results
 }
-func analyzeDiffsWithCVEs(diffs []DiffFile, keywords string, cves []CVE) map[string]AnalysisResult {
+func analyzeDiffsWithCVEs(diffs []DiffFile, keywords string, cves []CVE, enableAI bool) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	for _, diff := range diffs {
 		if !validateFilename(diff.Filename) {
@@ -619,7 +619,9 @@ func analyzeDiffsWithCVEs(diffs []DiffFile, keywords string, cves []CVE) map[str
 		result := AnalysisResult{
 			Context: contextLines,
 		}
-		result.VulnerabilityStatus = "AI: Analyzing..."
+		if enableAI {
+			result.VulnerabilityStatus = "AI: Analyzing..."
+		}
 		result.VulnSeverity = "unknown"
 		if len(cves) > 0 {
 			result.CVEMatches = make(map[string]CVEMatch)
