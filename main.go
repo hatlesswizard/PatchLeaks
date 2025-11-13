@@ -1,4 +1,5 @@
 package main
+
 import (
 	"crypto/md5"
 	"encoding/hex"
@@ -16,9 +17,11 @@ import (
 	"syscall"
 	"time"
 )
+
 const (
 	DefaultHost = "127.0.0.1"
 )
+
 var (
 	config            *Config
 	sessionStore      *sessions.CookieStore
@@ -30,15 +33,16 @@ var (
 	testRealWorld     = flag.Bool("test-real-world", false, "Run real-world tests instead of starting server")
 	testLanguages     = flag.String("language", "", "Comma-separated list of languages to test (php,javascript,python)")
 )
+
 func main() {
 	flag.Parse()
-	maxCPUPercent := 50.0 
+	maxCPUPercent := 50.0
 	InitCPUThrottler(maxCPUPercent)
 	GetBuiltinDetector()
-	
+
 	// Setup graceful shutdown
 	setupGracefulShutdown()
-	
+
 	if *testRealWorld {
 		initializeDirectories()
 		var languages []string
@@ -77,7 +81,7 @@ func main() {
 		} else {
 		}
 	}()
-	
+
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
@@ -95,7 +99,7 @@ func main() {
 func setupGracefulShutdown() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
+
 	go func() {
 		<-sigChan
 		fmt.Println("\nReceived shutdown signal, flushing logs...")
@@ -108,6 +112,7 @@ func setupRouter() *mux.Router {
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 	r.HandleFunc("/", indexHandler).Methods("GET")
 	r.HandleFunc("/analysis/{id}", viewAnalysisHandler).Methods("GET")
+	r.HandleFunc("/analysis/{id}/mini", viewAnalysisMiniDashboardHandler).Methods("GET")
 	r.HandleFunc("/get_versions/{product}", getVersionsHandler).Methods("GET")
 	protected := r.PathPrefix("/").Subrouter()
 	protected.Use(basicAuthMiddleware)
@@ -127,6 +132,8 @@ func setupRouter() *mux.Router {
 	r.HandleFunc("/reports", reportsHandler).Methods("GET")
 	r.HandleFunc("/dashboard", dashboardHandler).Methods("GET")
 	r.HandleFunc("/api/dashboard/stats", dashboardAPIHandler).Methods("GET")
+	r.HandleFunc("/api/analyses", listAnalysesAPIHandler).Methods("GET")
+	r.HandleFunc("/api/analysis/{id}/vulnerabilities", analysisVulnerabilityDetailsHandler).Methods("GET")
 	return r
 }
 func generateRandomMD5() string {
