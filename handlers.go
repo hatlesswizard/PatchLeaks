@@ -1,4 +1,5 @@
 package main
+
 import (
 	"encoding/json"
 	"fmt"
@@ -6,6 +7,7 @@ import (
 	"github.com/gorilla/mux"
 	"html/template"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,7 +15,9 @@ import (
 	"strings"
 	"time"
 )
+
 var templates *template.Template
+
 func init() {
 	funcMap := template.FuncMap{
 		"hasPrefix": strings.HasPrefix,
@@ -96,6 +100,7 @@ func init() {
 		"templates/products.html",
 		"templates/folder.html",
 		"templates/analysis.html",
+		"templates/analysis_dashboard.html",
 		"templates/dashboard.html",
 	}
 	var parseErrors []string
@@ -131,19 +136,9 @@ Example: Replace {% for item in items %} with {{range .Items}}`, http.StatusInte
 func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	analysisID := vars["id"]
-	if !isValidUUID(analysisID) {
-		http.Error(w, "Invalid analysis ID", http.StatusNotFound)
-		return
-	}
-	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
-	data, err := TrackedReadFile(analysisPath)
+	analysis, err := loadAnalysisByID(analysisID)
 	if err != nil {
 		http.Error(w, "Analysis not found", http.StatusNotFound)
-		return
-	}
-	var analysis Analysis
-	if err := json.Unmarshal(data, &analysis); err != nil {
-		http.Error(w, "Invalid analysis data", http.StatusInternalServerError)
 		return
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
@@ -191,7 +186,7 @@ func viewAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		AnalysisURL        string
 		Status             string
 	}{
-		Analysis:           analysis,
+		Analysis:           *analysis,
 		PaginatedResults:   paginatedResults,
 		IndexedResults:     indexedResults,
 		Pagination:         pagination,
@@ -247,6 +242,7 @@ func saveAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				if aiResp, ok := resultMap["ai_response"].(string); ok {
 					result.AIResponse = aiResp
+					result.CWE = extractCWEsFromAIResponse(aiResp)
 				}
 				if vulnStatus, ok := resultMap["vulnerability_status"].(string); ok {
 					result.VulnerabilityStatus = vulnStatus
@@ -287,6 +283,101 @@ func productsHandler(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(productsList)
 	if r.Method == "POST" {
 		r.ParseForm()
+		formType := strings.TrimSpace(r.FormValue("form_type"))
+		if formType == "bulk" {
+			product := validateInput(r.FormValue("product"), 100)
+			countStr := strings.TrimSpace(r.FormValue("count"))
+			count, err := strconv.Atoi(countStr)
+			if err != nil {
+				count = 0
+			}
+			extension := validateInput(r.FormValue("extension"), 10)
+			enableAI := r.FormValue("enable_ai")
+			specialKeywords := validateInput(r.FormValue("special_keywords"), 500)
+			cveIDs := validateInput(r.FormValue("cve_ids"), 200)
+			redirectValues := url.Values{}
+			redirectValues.Set("flash", "bulk-invalid")
+			if product != "" {
+				redirectValues.Set("bulk_product", product)
+			}
+			if countStr != "" {
+				redirectValues.Set("bulk_count", countStr)
+			}
+			if extension != "" {
+				redirectValues.Set("bulk_extension", extension)
+			}
+			if specialKeywords != "" {
+				redirectValues.Set("bulk_special_keywords", specialKeywords)
+			}
+			if cveIDs != "" {
+				redirectValues.Set("bulk_cve_ids", cveIDs)
+			}
+			if enableAI == "on" {
+				redirectValues.Set("bulk_enable_ai", enableAI)
+			}
+			if product == "" || count < 1 {
+				http.Redirect(w, r, "/products?"+redirectValues.Encode(), http.StatusSeeOther)
+				return
+			}
+			productData, exists := productsData[product]
+			if !exists || !validateURL(productData.RepoURL) {
+				redirectValues.Set("flash", "bulk-unknown")
+				http.Redirect(w, r, "/products?"+redirectValues.Encode(), http.StatusSeeOther)
+				return
+			}
+			versions := getGitHubVersions(productData.RepoURL)
+			if len(versions) == 0 {
+				redirectValues.Set("flash", "bulk-fetch-error")
+				http.Redirect(w, r, "/products?"+redirectValues.Encode(), http.StatusSeeOther)
+				return
+			}
+			requiredVersions := count + 1
+			if len(versions) < requiredVersions {
+				redirectValues.Set("flash", "bulk-insufficient")
+				redirectValues.Set("available_versions", strconv.Itoa(len(versions)))
+				redirectValues.Set("required_versions", strconv.Itoa(requiredVersions))
+				http.Redirect(w, r, "/products?"+redirectValues.Encode(), http.StatusSeeOther)
+				return
+			}
+			var latest string
+			if len(versions) > 0 {
+				latest = versions[0]
+			}
+			pairs := make([]map[string]string, 0, count)
+			for i := 0; i < count; i++ {
+				pairs = append(pairs, map[string]string{
+					"new_version": versions[i],
+					"old_version": versions[i+1],
+				})
+			}
+			params := map[string]interface{}{
+				"product":             product,
+				"extension":           extension,
+				"enable_ai":           enableAI,
+				"special_keywords":    specialKeywords,
+				"cve_ids":             cveIDs,
+				"bulk":                true,
+				"bulk_total":          count,
+				"bulk_latest_version": latest,
+				"bulk_oldest_version": versions[count],
+				"bulk_pairs":          pairs,
+			}
+			analysisID := createNewAnalysisRecord(params, "products_bulk", enableAI == "on")
+			go runAnalysisBackground(analysisID, params, "products_bulk")
+			reportParams := url.Values{}
+			reportParams.Set("flash", "bulk-success")
+			reportParams.Set("product", product)
+			reportParams.Set("count", strconv.Itoa(count))
+			reportParams.Set("latest_version", latest)
+			oldest := versions[count]
+			reportParams.Set("oldest_version", oldest)
+			reportParams.Set("analysis", analysisID)
+			if enableAI == "on" {
+				reportParams.Set("ai", "1")
+			}
+			http.Redirect(w, r, "/reports?"+reportParams.Encode(), http.StatusSeeOther)
+			return
+		}
 		product := validateInput(r.FormValue("product"), 100)
 		oldVersion := validateInput(r.FormValue("old_version"), 50)
 		newVersion := validateInput(r.FormValue("new_version"), 50)
@@ -312,30 +403,46 @@ func productsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/analysis/%s", analysisID), http.StatusSeeOther)
 		return
 	}
+	query := r.URL.Query()
+	selectedProduct := validateInput(query.Get("product"), 100)
+	bulkProduct := validateInput(query.Get("bulk_product"), 100)
+	bulkCount, _ := strconv.Atoi(strings.TrimSpace(query.Get("bulk_count")))
 	data := struct {
-		Products        []string
-		AnalyzedResults map[string]AnalysisResult
-		Product         string
-		OldVersion      string
-		NewVersion      string
-		Extension       string
-		SpecialKeywords string
-		CVEIDs          string
-		EnableAI        string
-		FlashMessages   []FlashMessage
-		Error           string
+		Products            []string
+		AnalyzedResults     map[string]AnalysisResult
+		Product             string
+		OldVersion          string
+		NewVersion          string
+		Extension           string
+		SpecialKeywords     string
+		CVEIDs              string
+		EnableAI            string
+		BulkProduct         string
+		BulkCount           int
+		BulkExtension       string
+		BulkSpecialKeywords string
+		BulkCVEIDs          string
+		BulkEnableAI        string
+		FlashMessages       []FlashMessage
+		Error               string
 	}{
-		Products:        productsList,
-		AnalyzedResults: make(map[string]AnalysisResult),
-		Product:         "",
-		OldVersion:      "",
-		NewVersion:      "",
-		Extension:       "",
-		SpecialKeywords: "",
-		CVEIDs:          "",
-		EnableAI:        "",
-		FlashMessages:   []FlashMessage{},
-		Error:           "",
+		Products:            productsList,
+		AnalyzedResults:     make(map[string]AnalysisResult),
+		Product:             selectedProduct,
+		OldVersion:          validateInput(query.Get("old_version"), 50),
+		NewVersion:          validateInput(query.Get("new_version"), 50),
+		Extension:           validateInput(query.Get("extension"), 10),
+		SpecialKeywords:     validateInput(query.Get("special_keywords"), 500),
+		CVEIDs:              validateInput(query.Get("cve_ids"), 200),
+		EnableAI:            query.Get("enable_ai"),
+		BulkProduct:         bulkProduct,
+		BulkCount:           bulkCount,
+		BulkExtension:       validateInput(query.Get("bulk_extension"), 10),
+		BulkSpecialKeywords: validateInput(query.Get("bulk_special_keywords"), 500),
+		BulkCVEIDs:          validateInput(query.Get("bulk_cve_ids"), 200),
+		BulkEnableAI:        query.Get("bulk_enable_ai"),
+		FlashMessages:       buildProductFlashMessages(r),
+		Error:               "",
 	}
 	if err := templates.ExecuteTemplate(w, "products.html", data); err != nil {
 		http.Error(w, "Error rendering page", http.StatusInternalServerError)
@@ -402,10 +509,86 @@ func reportsHandler(w http.ResponseWriter, r *http.Request) {
 		FlashMessages []FlashMessage
 	}{
 		Reports:       reports,
-		FlashMessages: []FlashMessage{},
+		FlashMessages: buildReportsFlashMessages(r),
 	}
 	if err := templates.ExecuteTemplate(w, "reports.html", data); err != nil {
 	}
+}
+func buildProductFlashMessages(r *http.Request) []FlashMessage {
+	flashKey := r.URL.Query().Get("flash")
+	if flashKey == "" {
+		return []FlashMessage{}
+	}
+	var messages []FlashMessage
+	switch flashKey {
+	case "bulk-invalid":
+		messages = append(messages, FlashMessage{
+			Category: "error",
+			Message:  "Please select a product and enter a valid comparison count (minimum 1) to start a bulk analysis.",
+		})
+	case "bulk-unknown":
+		messages = append(messages, FlashMessage{
+			Category: "error",
+			Message:  "The selected product is not configured or has an invalid repository URL.",
+		})
+	case "bulk-fetch-error":
+		messages = append(messages, FlashMessage{
+			Category: "error",
+			Message:  "Unable to fetch the latest releases for this product. Please try again in a moment.",
+		})
+	case "bulk-insufficient":
+		available := r.URL.Query().Get("available_versions")
+		required := r.URL.Query().Get("required_versions")
+		if available == "" {
+			available = "0"
+		}
+		if required == "" {
+			required = "0"
+		}
+		message := fmt.Sprintf("Not enough releases are available for that bulk request. Needed %s versions but only found %s.", required, available)
+		messages = append(messages, FlashMessage{
+			Category: "error",
+			Message:  message,
+		})
+	default:
+	}
+	return messages
+}
+func buildReportsFlashMessages(r *http.Request) []FlashMessage {
+	flashKey := r.URL.Query().Get("flash")
+	if flashKey == "" {
+		return []FlashMessage{}
+	}
+	var messages []FlashMessage
+	switch flashKey {
+	case "bulk-success":
+		product := r.URL.Query().Get("product")
+		countStr := r.URL.Query().Get("count")
+		latest := r.URL.Query().Get("latest_version")
+		oldest := r.URL.Query().Get("oldest_version")
+		analysisID := r.URL.Query().Get("analysis")
+		if product == "" {
+			product = "selected product"
+		}
+		if countStr == "" {
+			countStr = "0"
+		}
+		message := fmt.Sprintf("Queued %s bulk product comparisons for %s (%s → %s).", countStr, product, latest, oldest)
+		if analysisID != "" {
+			message += fmt.Sprintf(" Combined analysis ID: %s.", analysisID)
+		} else {
+			message += " Combined analysis will appear in the reports list shortly."
+		}
+		if r.URL.Query().Get("ai") == "1" {
+			message += " AI analysis is enabled for each comparison."
+		}
+		messages = append(messages, FlashMessage{
+			Category: "success",
+			Message:  message,
+		})
+	default:
+	}
+	return messages
 }
 func manageProductsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
@@ -508,15 +691,14 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		} else if numCtx > 32768 {
 			numCtx = 32768
 		}
-		
-		
+
 		newParameters := make(map[string]interface{})
 		if config != nil && config.Parameters != nil {
 			for k, v := range config.Parameters {
 				newParameters[k] = v
 			}
 		}
-		
+
 		newParameters["temperature"] = temperature
 		newParameters["num_ctx"] = numCtx
 		newParameters["enable_context_analysis"] = r.FormValue("enable_context_analysis") == "on"
@@ -553,7 +735,7 @@ func aiSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := newConfig.Save(); err != nil {
 		} else {
-			
+
 			reloadedConfig, err := LoadConfig()
 			if err != nil {
 			} else {
@@ -656,6 +838,103 @@ func dashboardAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, stats)
+}
+
+func listAnalysesAPIHandler(w http.ResponseWriter, r *http.Request) {
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	perPage, err := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if err != nil || perPage < 5 || perPage > 50 {
+		perPage = 10
+	}
+	analyses := loadAllAnalyses()
+	total := len(analyses)
+	start := (page - 1) * perPage
+	if start >= total {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"analyses": []AnalysisSummary{},
+			"page":     page,
+			"per_page": perPage,
+			"total":    total,
+			"has_next": false,
+		})
+		return
+	}
+	end := start + perPage
+	if end > total {
+		end = total
+	}
+	summaries := make([]AnalysisSummary, 0, end-start)
+	for _, analysis := range analyses[start:end] {
+		summaries = append(summaries, summarizeAnalysis(analysis))
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"analyses": summaries,
+		"page":     page,
+		"per_page": perPage,
+		"total":    total,
+		"has_next": end < total,
+	})
+}
+
+func viewAnalysisMiniDashboardHandler(w http.ResponseWriter, r *http.Request) {
+	if !templatesLoaded() {
+		http.Error(w, "Templates not loaded", http.StatusInternalServerError)
+		return
+	}
+	vars := mux.Vars(r)
+	analysisID := vars["id"]
+	analysis, err := loadAnalysisByID(analysisID)
+	if err != nil {
+		http.Error(w, "Analysis not found", http.StatusNotFound)
+		return
+	}
+	summary := summarizeAnalysis(*analysis)
+	focusType := strings.TrimSpace(r.URL.Query().Get("focus"))
+	templateData := struct {
+		Analysis   Analysis
+		Summary    AnalysisSummary
+		AnalysisID string
+		FocusType  string
+	}{
+		Analysis:   *analysis,
+		Summary:    summary,
+		AnalysisID: analysisID,
+		FocusType:  focusType,
+	}
+	if err := templates.ExecuteTemplate(w, "analysis_dashboard.html", templateData); err != nil {
+		if err.Error() != "write tcp" && !strings.Contains(err.Error(), "broken pipe") {
+		}
+		return
+	}
+}
+
+func analysisVulnerabilityDetailsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	analysisID := vars["id"]
+	vulnType := strings.TrimSpace(r.URL.Query().Get("type"))
+	if vulnType == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing vulnerability type"})
+		return
+	}
+	analysis, err := loadAnalysisByID(analysisID)
+	if err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Analysis not found"})
+		return
+	}
+	index := buildAnalysisVulnerabilityIndex(*analysis)
+	details, ok := index[vulnType]
+	if !ok {
+		details = []AnalysisVulnerabilityDetail{}
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"analysis_id": analysisID,
+		"type":        vulnType,
+		"count":       len(details),
+		"results":     details,
+	})
 }
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
