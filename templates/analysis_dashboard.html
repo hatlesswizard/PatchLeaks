@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PatchLeaks - Analysis Overview</title>
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-blue: #4169E1;
+            --accent-color: #6c5ce7;
+            --dark-bg: #0a0b10;
+            --card-bg: #121520;
+            --code-bg: #0a0e14;
+            --success-color: #00b894;
+            --danger-color: #e74c3c;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--dark-bg) 0%, #16171d 100%);
+            color: #f8f9fa;
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow-x: hidden;
+        }
+
+        .navbar {
+            background: rgba(10, 11, 16, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding: 1rem 2rem;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .nav-link {
+            color: rgba(255,255,255,0.7);
+            margin: 0 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            color: #fff;
+        }
+
+        .nav-link.active {
+            color: var(--primary-blue) !important;
+            font-weight: 500;
+        }
+
+        .main-container {
+            padding-top: 6rem;
+            padding-bottom: 3rem;
+        }
+
+        .summary-card {
+            background: linear-gradient(135deg, var(--card-bg) 0%, rgba(18, 21, 32, 0.95) 100%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 1.75rem;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            margin-bottom: 1.5rem;
+        }
+
+        .summary-card h1 {
+            font-size: 2.1rem;
+            font-weight: 800;
+            margin-bottom: 0.75rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .summary-item {
+            background: rgba(255,255,255,0.04);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .summary-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .summary-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-top: 0.25rem;
+        }
+
+        .section-title {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin: 2.5rem 0 1.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .type-card {
+            background: linear-gradient(135deg, var(--card-bg) 0%, rgba(18, 21, 32, 0.95) 100%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            box-shadow: 0 12px 24px rgba(0,0,0,0.35);
+            height: 100%;
+        }
+
+        .type-card .card-header {
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            background: transparent;
+            padding: 1.25rem 1.5rem;
+        }
+
+        .type-card .card-body {
+            padding: 1.5rem;
+        }
+
+        .type-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .vuln-type-pill {
+            background: rgba(65, 105, 225, 0.12);
+            border: 1px solid rgba(65, 105, 225, 0.25);
+            color: #fff;
+            border-radius: 14px;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            font-weight: 500;
+        }
+
+        .vuln-type-pill .pill-count {
+            background: rgba(255,255,255,0.12);
+            border-radius: 999px;
+            padding: 0.2rem 0.75rem;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .vuln-type-pill.active {
+            background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
+            border-color: rgba(255,255,255,0.4);
+            box-shadow: 0 8px 18px rgba(65,105,225,0.35);
+        }
+
+        .vuln-type-pill:hover {
+            transform: translateY(-1px);
+            border-color: rgba(255,255,255,0.4);
+        }
+
+        .patchdiff-card {
+            background: linear-gradient(135deg, var(--card-bg) 0%, rgba(18, 21, 32, 0.95) 100%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.35);
+            height: 100%;
+        }
+
+        .patchdiff-card .card-header {
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            background: transparent;
+            padding: 1.25rem 1.5rem;
+        }
+
+        .patchdiff-card .card-body {
+            padding: 1.5rem;
+        }
+
+        .vuln-details {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin-top: 0;
+        }
+
+        .detail-card {
+            background: linear-gradient(135deg, rgba(18, 21, 32, 0.95), rgba(12, 15, 24, 0.95));
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        .detail-card-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            color: #f8f9fa;
+        }
+
+        .detail-card-header h5 {
+            font-size: 1.05rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #fff;
+        }
+
+        .detail-card-header .detail-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+
+        .detail-card-header .detail-meta .status-badge {
+            margin: 0;
+        }
+
+        .detail-card-body {
+            padding: 0;
+        }
+
+        .code-block {
+            background: var(--code-bg);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 0;
+            padding: 1.25rem;
+            font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 0.85rem;
+            color: #f8f9fa;
+            overflow: auto;
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        .ai-section {
+            background: rgba(243, 156, 18, 0.12);
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding: 1.25rem;
+            border-radius: 0 0 16px 16px;
+        }
+
+        .ai-section h6 {
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: rgba(255,255,255,0.94);
+        }
+
+        .ai-section details summary {
+            cursor: pointer;
+            color: rgba(255,255,255,0.75);
+        }
+
+        .ai-section details summary:hover {
+            color: #fff;
+        }
+
+        .ai-section pre {
+            background: rgba(10, 14, 20, 0.9);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 1rem;
+            color: rgba(255,255,255,0.85) !important;
+            margin-top: 1rem !important;
+        }
+
+        .ai-section .text-muted {
+            color: rgba(255,255,255,0.65) !important;
+        }
+
+        .diff-add {
+            color: #25c97c;
+            background-color: rgba(37, 201, 124, 0.1);
+            display: block;
+            padding: 2px 4px;
+        }
+
+        .diff-remove {
+            color: #ff5757;
+            background-color: rgba(255, 87, 87, 0.1);
+            display: block;
+            padding: 2px 4px;
+        }
+
+        .context-line {
+            color: #a2abb8;
+            display: block;
+            padding: 2px 4px;
+        }
+
+        .ellipsis {
+            color: #8a93a2;
+            font-style: italic;
+            padding: 2px 4px;
+            display: block;
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            background: rgba(65, 105, 225, 0.15);
+            border: 1px solid rgba(65, 105, 225, 0.35);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .loading-state,
+        .empty-state {
+            background: rgba(255,255,255,0.04);
+            border: 1px dashed rgba(255,255,255,0.1);
+            border-radius: 14px;
+            padding: 2.5rem;
+            text-align: center;
+            margin-top: 1rem;
+        }
+
+        .back-link {
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            transition: color 0.2s ease;
+        }
+
+        .back-link:hover {
+            color: #fff;
+        }
+
+        .site-footer {
+            margin-top: 4rem;
+            padding: 2rem 0;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            background: transparent;
+        }
+
+        .site-footer p {
+            margin: 0;
+            color: rgba(255,255,255,0.5);
+            letter-spacing: 0.5px;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .summary-card {
+                padding: 1.25rem;
+            }
+
+            .summary-card h1 {
+                font-size: 1.6rem;
+            }
+
+            .section-title {
+                font-size: 1.3rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <i class="fas fa-shield-alt me-2 text-primary"></i>
+                <span class="fw-bold text-white">PatchLeaks</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/folder">Folder Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/products">Product Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/library">Library</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/ai-settings">AI Analysis</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/reports">Reports</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-container">
+        <a href="/dashboard" class="back-link">
+            <i class="fas fa-arrow-left"></i>
+            Back to Dashboard
+        </a>
+
+        <div class="summary-card">
+            <h1>Analysis Overview</h1>
+            <div class="d-flex flex-wrap gap-3 align-items-center">
+                <span class="status-badge">{{.Summary.Status}}</span>
+                <span><i class="fas fa-clock me-2"></i>{{.Summary.CreatedAt.Format "Jan 2, 2006 15:04"}}</span>
+                {{if .Summary.Product}}
+                <span><i class="fas fa-box-open me-2"></i>{{.Summary.Product}}</span>
+                {{end}}
+                {{if .Summary.OldVersion}}
+                <span><i class="fas fa-code-branch me-2"></i>{{.Summary.OldVersion}} → {{.Summary.NewVersion}}</span>
+                {{end}}
+            </div>
+
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-label">Total Findings</div>
+                    <div class="summary-value">{{.Summary.TotalFindings}}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Vulnerabilities (AI)</div>
+                    <div class="summary-value">{{.Summary.VulnerabilityCount}}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Source</div>
+                    <div class="summary-value text-uppercase">{{.Summary.Source}}</div>
+                </div>
+                {{if (index .Summary.Metadata "ai_service")}}
+                <div class="summary-item">
+                    <div class="summary-label">AI Service</div>
+                    <div class="summary-value text-uppercase">{{index .Summary.Metadata "ai_service"}}</div>
+                </div>
+                {{end}}
+                {{if (index .Summary.Metadata "ai_model")}}
+                <div class="summary-item">
+                    <div class="summary-label">AI Model</div>
+                    <div class="summary-value">{{index .Summary.Metadata "ai_model"}}</div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <div class="section-title">
+            <i class="fas fa-bug"></i>
+            Top Vulnerability Types
+        </div>
+
+        <div class="row g-4 align-items-start mt-4">
+            <div class="col-lg-4">
+                <div class="card type-card">
+                    <div class="card-header d-flex align-items-center justify-content-between">
+                        <h5 class="mb-0 text-white">
+                            <i class="fas fa-layer-group me-2 text-primary"></i>
+                            Vulnerability Types
+                        </h5>
+                        {{if .Summary.TopVulnerabilityTypes}}
+                        <span class="badge bg-primary bg-opacity-25 text-primary">{{len .Summary.TopVulnerabilityTypes}}</span>
+                        {{end}}
+                    </div>
+                    <div class="card-body">
+                        <div id="vulnTypeList" class="type-list" data-focus="{{.FocusType}}">
+                            {{range .Summary.TopVulnerabilityTypes}}
+                            <button class="vuln-type-pill text-start" data-type="{{.Type}}">
+                                <span class="flex-grow-1">{{.Type}}</span>
+                                <span class="pill-count">{{.Count}}</span>
+                            </button>
+                            {{end}}
+                            {{if not .Summary.TopVulnerabilityTypes}}
+                            <div class="empty-state">
+                                <i class="fas fa-search-minus fa-2x mb-3 opacity-50"></i>
+                                <p class="mb-0 text-muted">No vulnerability types detected for this analysis.</p>
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-8">
+                <div class="card patchdiff-card">
+                    <div class="card-header d-flex align-items-center justify-content-between">
+                        <h5 class="mb-0 text-white">
+                            <i class="fas fa-code-branch me-2 text-primary"></i>
+                            Patchdiffs
+                        </h5>
+                        <span class="small d-none d-lg-inline" style="color: rgba(255,255,255,0.6);">Select a vulnerability type to view changes</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="detailsContainer" class="vuln-details">
+                            <div class="empty-state" id="detailsPlaceholder">
+                                <i class="fas fa-hand-pointer fa-2x mb-3 opacity-50"></i>
+                                <p class="mb-0 text-muted">Select a vulnerability type to see associated patchdiffs.</p>
+                            </div>
+                        </div>
+                        <div id="detailsLoadMoreWrapper" class="d-flex justify-content-center mt-4 d-none">
+                            <button id="detailsLoadMore" class="btn btn-outline-primary px-4">
+                                Load more
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="site-footer">
+        <div class="container text-center">
+            <p class="small mb-0">&copy; PatchLeaks Security Analysis</p>
+        </div>
+    </footer>
+
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const analysisId = '{{.AnalysisID}}';
+            const topTypesData = JSON.parse('{{json .Summary.TopVulnerabilityTypes}}');
+            const topTypes = Array.isArray(topTypesData) ? topTypesData : [];
+            const typeListEl = document.getElementById('vulnTypeList');
+            const detailsContainer = document.getElementById('detailsContainer');
+            const detailsPlaceholder = document.getElementById('detailsPlaceholder');
+            const detailsLoadMoreWrapper = document.getElementById('detailsLoadMoreWrapper');
+            const detailsLoadMoreBtn = document.getElementById('detailsLoadMore');
+            const focusType = typeListEl ? typeListEl.dataset.focus : '';
+            const DETAILS_PAGE_SIZE = 5;
+            const detailState = {
+                type: '',
+                results: [],
+                nextIndex: 0
+            };
+            let activeType = '';
+
+            function escapeHTML(str) {
+                return str.replace(/[&<>'"]/g, (char) => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[char]));
+            }
+
+            function setLoadingState() {
+                detailsContainer.innerHTML = `
+                    <div class="loading-state">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mb-0 text-muted">Loading patchdiffs...</p>
+                    </div>
+                `;
+                toggleDetailsLoadMore(false);
+            }
+
+            function toggleDetailsLoadMore(show) {
+                if (!detailsLoadMoreWrapper) {
+                    return;
+                }
+                if (show) {
+                    detailsLoadMoreWrapper.classList.remove('d-none');
+                } else {
+                    detailsLoadMoreWrapper.classList.add('d-none');
+                }
+            }
+
+            function renderDetailCard(item) {
+                const diff = (item.context || []).map(line => {
+                    const escaped = escapeHTML(line);
+                    if (line === '...') {
+                        return '<span class="ellipsis">...</span>';
+                    }
+                    if (line.startsWith('+')) {
+                        return `<span class="diff-add">${escaped}</span>`;
+                    }
+                    if (line.startsWith('-')) {
+                        return `<span class="diff-remove">${escaped}</span>`;
+                    }
+                    return `<span class="context-line">${escaped}</span>`;
+                }).join('');
+                const statusBadge = item.vulnerability_status ? `<span class="status-badge">${escapeHTML(item.vulnerability_status)}</span>` : '';
+                const severityBadge = item.vuln_severity && item.vuln_severity !== 'unknown'
+                    ? `<span class="status-badge" style="background: rgba(231, 76, 60, 0.18); border-color: rgba(231, 76, 60, 0.4);">${escapeHTML(item.vuln_severity)}</span>`
+                    : '';
+                const aiSection = item.ai_response ? `
+                    <div class="ai-section">
+                        <h6><i class="fas fa-robot text-warning"></i>AI Analysis</h6>
+                        <details>
+                            <summary>View full AI response</summary>
+                            <pre class="mt-3 small text-muted">${escapeHTML(item.ai_response)}</pre>
+                        </details>
+                    </div>
+                ` : '';
+
+                return `
+                    <div class="detail-card">
+                        <div class="detail-card-header d-flex justify-content-between align-items-start">
+                            <h5 class="mb-0">
+                                <i class="fas fa-file-code text-primary"></i>
+                                <span>${escapeHTML(item.filename || 'Unknown file')}</span>
+                            </h5>
+                            <div class="detail-meta">${statusBadge}${severityBadge}</div>
+                        </div>
+                        <div class="detail-card-body">
+                            <pre class="code-block">${diff}</pre>
+                            ${aiSection}
+                        </div>
+                    </div>
+                `;
+            }
+
+            function renderDetailBatch(reset = false) {
+                if (!detailState.results.length) {
+                    detailsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-folder-open fa-2x mb-3 opacity-50"></i>
+                            <p class="mb-0 text-muted">No patchdiffs found for this vulnerability type.</p>
+                        </div>
+                    `;
+                    toggleDetailsLoadMore(false);
+                    return;
+                }
+
+                if (reset) {
+                    detailsContainer.innerHTML = '';
+                    detailState.nextIndex = 0;
+                }
+
+                const start = detailState.nextIndex;
+                const end = Math.min(start + DETAILS_PAGE_SIZE, detailState.results.length);
+                if (start >= end) {
+                    toggleDetailsLoadMore(false);
+                    return;
+                }
+
+                const fragment = detailState.results.slice(start, end).map(renderDetailCard).join('');
+                detailsContainer.insertAdjacentHTML('beforeend', fragment);
+                detailState.nextIndex = end;
+                toggleDetailsLoadMore(detailState.nextIndex < detailState.results.length);
+            }
+
+            function isRelevantDetail(item) {
+                const normalized = (item.vulnerability_status_normalized || '').toLowerCase();
+                if (normalized === 'yes' || normalized === 'not_sure') {
+                    return true;
+                }
+                const statusText = (item.vulnerability_status || '').toLowerCase();
+                if (statusText.includes('no vulnerabilities')) {
+                    return false;
+                }
+                if (statusText.includes('not sure')) {
+                    return true;
+                }
+                if (statusText.includes('vulnerability existed: yes')) {
+                    return true;
+                }
+                return statusText.includes('vulnerabilities');
+            }
+
+            function renderDetails(data) {
+                if (!data || !Array.isArray(data.results)) {
+                    detailsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-3 text-warning"></i>
+                            <p class="mb-0 text-muted">No patchdiffs available.</p>
+                        </div>
+                    `;
+                    toggleDetailsLoadMore(false);
+                    return;
+                }
+
+                const relevantResults = data.results.filter(isRelevantDetail);
+                detailState.results = relevantResults;
+                renderDetailBatch(true);
+            }
+
+            function clearActivePills() {
+                document.querySelectorAll('.vuln-type-pill').forEach(pill => pill.classList.remove('active'));
+            }
+
+            async function loadType(type, pillEl) {
+                if (!type || type === activeType) {
+                    return;
+                }
+                activeType = type;
+                clearActivePills();
+                if (pillEl) {
+                    pillEl.classList.add('active');
+                }
+                setLoadingState();
+                detailState.results = [];
+                try {
+                    const response = await fetch(`/api/analysis/${analysisId}/vulnerabilities?type=${encodeURIComponent(type)}`);
+                    if (!response.ok) {
+                        throw new Error('Failed to load vulnerability details');
+                    }
+                    const data = await response.json();
+                    detailState.type = type;
+                    renderDetails(data);
+                } catch (err) {
+                    detailsContainer.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-3 text-warning"></i>
+                            <p class="mb-0">${escapeHTML(err.message || 'Failed to load data.')}</p>
+                        </div>
+                    `;
+                    toggleDetailsLoadMore(false);
+                }
+            }
+
+            function initializePills() {
+                document.querySelectorAll('.vuln-type-pill').forEach(pill => {
+                    pill.addEventListener('click', () => {
+                        if (detailsPlaceholder) {
+                            detailsPlaceholder.remove();
+                        }
+                        loadType(pill.dataset.type, pill);
+                    });
+                });
+
+                if (topTypes.length === 0) {
+                    return;
+                }
+
+                let initialType = topTypes[0].Type || 'Uncategorized';
+                if (focusType) {
+                    const normalizedFocus = focusType.toLowerCase();
+                    const match = topTypes.find(item => (item.Type || '').toLowerCase() === normalizedFocus);
+                    if (match) {
+                        initialType = match.Type;
+                    }
+                }
+
+                const initialPill = Array.from(document.querySelectorAll('.vuln-type-pill'))
+                    .find(pill => (pill.dataset.type || '').toLowerCase() === (initialType || '').toLowerCase());
+
+                if (initialPill) {
+                    if (detailsPlaceholder) {
+                        detailsPlaceholder.remove();
+                    }
+                    loadType(initialType, initialPill);
+                }
+            }
+
+            initializePills();
+
+            if (detailsLoadMoreBtn) {
+                detailsLoadMoreBtn.addEventListener('click', () => {
+                    renderDetailBatch(false);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+

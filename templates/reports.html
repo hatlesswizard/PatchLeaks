@@ -517,6 +517,11 @@
                         <span class="badge-product me-2">
                             <i class="fas fa-cube me-1"></i>Product
                         </span>
+                        {{if eq .Meta.Source "products_bulk"}}
+                        <span class="badge bg-info text-dark me-2">
+                            <i class="fas fa-layer-group me-1"></i>Bulk
+                        </span>
+                        {{end}}
                         {{else if or (eq .Meta.Source "library") (eq .Meta.Source "library_auto")}}
                         <span class="badge-library me-2">
                             <i class="fas fa-book me-1"></i>Library
@@ -553,10 +558,16 @@
                         </small>
                     {{else if (index .Meta.Params "product")}}
                         {{(index .Meta.Params "product")}} Analysis
+                        {{if eq .Meta.Source "products_bulk"}}
+                        <small class="d-block text-muted mt-1">
+                            {{length (index .Meta.Params "bulk_pairs")}} comparisons aggregated
+                        </small>
+                        {{else}}
                         <small class="d-block text-muted mt-1">
                             {{ (index .Meta.Params "old_version") }} → 
                             {{ (index .Meta.Params "new_version") }}
                         </small>
+                        {{end}}
                     {{else}}
                         Folder Analysis
                         <small class="d-block text-muted mt-1">
@@ -588,6 +599,38 @@
                 </div>
                 {{end}}
             </div>
+
+            {{if eq .Meta.Source "products_bulk"}}
+            {{with index .Meta.Params "bulk_summary"}}
+            <div class="mt-4">
+                <h6 class="text-white-50 mb-3"><i class="fas fa-layer-group me-2"></i>Comparison Details</h6>
+                {{range .}}
+                <div class="stat-item">
+                    <span class="stat-name">
+                        <i class="fas fa-code-branch text-primary me-2"></i>
+                        {{index . "new_version"}} → {{index . "old_version"}}
+                    </span>
+                    {{if eq (index . "status") "completed"}}
+                    <span class="stat-value">
+                        {{index . "file_count"}} files / {{index . "vuln_count"}} vulns
+                    </span>
+                    {{else if eq (index . "status") "error"}}
+                    <span class="stat-value text-warning">
+                        Error
+                    </span>
+                    {{else}}
+                    <span class="stat-value text-muted">
+                        {{index . "status"}}
+                    </span>
+                    {{end}}
+                </div>
+                {{if and (eq (index . "status") "error") (index . "error")}}
+                <p class="text-warning small ms-2 mb-2">{{index . "error"}}</p>
+                {{end}}
+                {{end}}
+            </div>
+            {{end}}
+            {{end}}
         </div>
         <div class="report-footer">
             <div class="d-flex justify-content-between align-items-center">

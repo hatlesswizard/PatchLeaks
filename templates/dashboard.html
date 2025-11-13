@@ -327,6 +327,115 @@
             border: 1px solid rgba(65,105,225,0.3);
         }
 
+        .analysis-section {
+            background: linear-gradient(135deg, rgba(18,21,32,0.85) 0%, rgba(12,14,24,0.95) 100%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+        }
+
+        .analysis-feed {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .analysis-card {
+            background: linear-gradient(135deg, var(--card-bg) 0%, rgba(18,21,32,0.95) 100%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            padding: 1.5rem;
+            transition: all 0.35s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+        }
+
+        .analysis-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(65,105,225,0.4);
+            box-shadow: 0 20px 45px rgba(65,105,225,0.25);
+        }
+
+        .analysis-card h4 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin: 0;
+        }
+
+        .analysis-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1rem;
+            color: rgba(255,255,255,0.65);
+            font-size: 0.9rem;
+        }
+
+        .analysis-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(65,105,225,0.15);
+            border: 1px solid rgba(65,105,225,0.35);
+            border-radius: 999px;
+            color: #fff;
+            text-decoration: none;
+            padding: 0.35rem 0.85rem;
+            font-size: 0.85rem;
+            transition: all 0.25s ease;
+        }
+
+        .analysis-chip span {
+            background: rgba(255,255,255,0.12);
+            border-radius: 999px;
+            padding: 0.1rem 0.55rem;
+            font-size: 0.75rem;
+        }
+
+        .analysis-chip:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.5);
+        }
+
+        .analysis-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .analysis-counts {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.75);
+        }
+
+        .analysis-load-indicator,
+        .analysis-empty {
+            margin-top: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            color: rgba(255,255,255,0.65);
+        }
+
+        .analysis-empty {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .analysis-sentinel {
+            width: 100%;
+            height: 1px;
+        }
+
         .badge-custom {
             padding: 0.4rem 0.8rem;
             border-radius: 8px;
@@ -633,7 +742,35 @@
             </div>
         </div>
 
-        
+        <div class="section-header">
+            <h2 class="section-title"><i class="fas fa-shield-alt me-3"></i>Analysis Explorer</h2>
+            <p class="section-subtitle">Browse saved analyses and drill into their vulnerability findings</p>
+        </div>
+
+        <div class="analysis-section">
+            <div id="analysisList" class="analysis-feed"></div>
+            <div id="analysisLoading" class="analysis-load-indicator d-none">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span>Loading analyses…</span>
+            </div>
+            <div id="analysisEmpty" class="analysis-empty d-none">
+                <i class="fas fa-folder-open fa-3x mb-3 opacity-50"></i>
+                <p class="mb-0 text-muted">No analyses available yet. Run an analysis to populate this section.</p>
+            </div>
+            <div id="analysisError" class="analysis-empty d-none">
+                <i class="fas fa-exclamation-triangle fa-3x mb-3 text-warning"></i>
+                <p class="mb-2">Failed to load analyses. Please try again.</p>
+                <button id="analysisRetryBtn" class="btn btn-sm btn-outline-light px-3">Retry</button>
+            </div>
+            <div class="d-flex justify-content-center mt-4">
+                <button id="analysisLoadMore" class="btn btn-outline-primary px-4">
+                    Load more
+                </button>
+            </div>
+        </div>
+
         <div class="section-header">
             <h2 class="section-title"><i class="fas fa-shield-virus me-3"></i>Vulnerability Intelligence</h2>
             <p class="section-subtitle">Insights into detected security vulnerabilities</p>
@@ -1108,6 +1245,190 @@
             Chart.defaults.color = 'rgba(255, 255, 255, 0.7)';
             Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
             Chart.defaults.font.family = "'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+            const analysisListEl = document.getElementById('analysisList');
+            const analysisLoadingEl = document.getElementById('analysisLoading');
+            const analysisEmptyEl = document.getElementById('analysisEmpty');
+            const analysisErrorEl = document.getElementById('analysisError');
+            const analysisRetryBtn = document.getElementById('analysisRetryBtn');
+            const analysisLoadMoreBtn = document.getElementById('analysisLoadMore');
+            let analysisPage = 1;
+            let analysisHasNext = true;
+            let analysisLoading = false;
+
+            function analysisEscapeHTML(value) {
+                if (value === null || value === undefined) {
+                    return '';
+                }
+                return String(value).replace(/[&<>'"]/g, function (char) {
+                    return ({
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        "'": '&#39;',
+                        '"': '&quot;'
+                    })[char];
+                });
+            }
+
+            function analysisFormatDate(iso) {
+                if (!iso) {
+                    return 'Unknown';
+                }
+                const date = new Date(iso);
+                if (Number.isNaN(date.getTime())) {
+                    return analysisEscapeHTML(iso);
+                }
+                return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+            }
+
+            function buildAnalysisCard(summary) {
+                const card = document.createElement('div');
+                card.className = 'analysis-card';
+
+                const summaryId = summary && summary.id ? String(summary.id) : '';
+                const safeSummaryId = analysisEscapeHTML(summaryId);
+                const productLabel = analysisEscapeHTML(summary.product || summary.source || `Analysis ${safeSummaryId.slice(0, 8)}`);
+                const createdAt = analysisFormatDate(summary.created_at);
+                const status = analysisEscapeHTML((summary.status || 'unknown').toUpperCase());
+                const vulns = typeof summary.vulnerability_count === 'number' ? summary.vulnerability_count : 0;
+                const findings = typeof summary.total_findings === 'number' ? summary.total_findings : 0;
+                const oldVersion = summary.old_version ? analysisEscapeHTML(summary.old_version) : '';
+                const newVersion = summary.new_version ? analysisEscapeHTML(summary.new_version) : '';
+                let versionMarkup = '';
+                if (oldVersion && newVersion) {
+                    versionMarkup = `<span><i class="fas fa-code-branch me-1"></i>${oldVersion} → ${newVersion}</span>`;
+                }
+
+                const topTypes = Array.isArray(summary.top_vulnerability_types) ? summary.top_vulnerability_types : [];
+                const chips = topTypes.length
+                    ? topTypes.map(type => {
+                        const rawType = type && type.type ? type.type : 'Uncategorized';
+                        const typeName = analysisEscapeHTML(rawType);
+                        const focusParam = encodeURIComponent(rawType);
+                        const count = typeof type.count === 'number' ? type.count : 0;
+                        return `<a class="analysis-chip" href="/analysis/${safeSummaryId}/mini?focus=${focusParam}">
+                                    ${typeName}
+                                    <span>${count}</span>
+                                </a>`;
+                    }).join('')
+                    : `<span class="text-muted small">No vulnerability types classified yet.</span>`;
+
+                card.innerHTML = `
+                    <div>
+                        <h4><i class="fas fa-file-signature text-primary"></i>${productLabel}</h4>
+                        <div class="analysis-meta">
+                            <span><i class="fas fa-calendar-alt me-1"></i>${createdAt}</span>
+                            <span><i class="fas fa-info-circle me-1"></i>${status}</span>
+                            ${versionMarkup}
+                        </div>
+                    </div>
+                    <div class="analysis-counts">
+                        <span><i class="fas fa-bug me-1 text-danger"></i>${vulns} vulns</span>
+                        <span><i class="fas fa-file-alt me-1 text-info"></i>${findings} findings</span>
+                    </div>
+                    <div class="analysis-chips">
+                        ${chips}
+                    </div>
+                    <div>
+                        <a class="btn btn-sm btn-outline-info" href="/analysis/${safeSummaryId}/mini">
+                            View mini dashboard
+                        </a>
+                    </div>
+                `;
+                return card;
+            }
+
+            function toggleDisplay(el, show) {
+                if (!el) {
+                    return;
+                }
+                if (show) {
+                    el.classList.remove('d-none');
+                } else {
+                    el.classList.add('d-none');
+                }
+            }
+
+            function updateLoadMoreVisibility() {
+                if (!analysisLoadMoreBtn) {
+                    return;
+                }
+                if (!analysisHasNext || analysisLoading) {
+                    analysisLoadMoreBtn.classList.add('d-none');
+                } else {
+                    analysisLoadMoreBtn.classList.remove('d-none');
+                }
+            }
+
+            function showError(message) {
+                if (!analysisErrorEl) {
+                    return;
+                }
+                const messageEl = analysisErrorEl.querySelector('p');
+                if (messageEl && message) {
+                    messageEl.textContent = message;
+                }
+                toggleDisplay(analysisErrorEl, true);
+            }
+
+            async function loadAnalyses() {
+                if (analysisLoading || !analysisHasNext || !analysisListEl) {
+                    return;
+                }
+                analysisLoading = true;
+                toggleDisplay(analysisErrorEl, false);
+                toggleDisplay(analysisLoadingEl, true);
+                if (analysisLoadMoreBtn) {
+                    analysisLoadMoreBtn.disabled = true;
+                }
+                try {
+                    const response = await fetch(`/api/analyses?page=${analysisPage}&per_page=6`);
+                    if (!response.ok) {
+                        throw new Error('Unable to load analyses.');
+                    }
+                    const data = await response.json();
+                    const analyses = Array.isArray(data.analyses) ? data.analyses : [];
+                    if (analysisPage === 1 && analyses.length === 0) {
+                        toggleDisplay(analysisEmptyEl, true);
+                        analysisHasNext = false;
+                        return;
+                    }
+                    toggleDisplay(analysisEmptyEl, false);
+                    analyses.forEach(summary => {
+                        analysisListEl.appendChild(buildAnalysisCard(summary));
+                    });
+                    analysisHasNext = Boolean(data.has_next);
+                    analysisPage += 1;
+                } catch (error) {
+                    console.error('Failed to load analyses', error);
+                    showError(error.message || 'Failed to load analyses. Please try again.');
+                } finally {
+                    toggleDisplay(analysisLoadingEl, false);
+                    analysisLoading = false;
+                    if (analysisLoadMoreBtn) {
+                        analysisLoadMoreBtn.disabled = false;
+                    }
+                    updateLoadMoreVisibility();
+                }
+            }
+
+            if (analysisRetryBtn) {
+                analysisRetryBtn.addEventListener('click', () => {
+                    toggleDisplay(analysisErrorEl, false);
+                    loadAnalyses();
+                });
+            }
+
+            if (analysisLoadMoreBtn) {
+                analysisLoadMoreBtn.addEventListener('click', () => {
+                    if (!analysisLoading) {
+                        loadAnalyses();
+                    }
+                });
+            }
+            loadAnalyses();
+            updateLoadMoreVisibility();
 
             
             const vulnByProductDataRaw = {{json .Stats.VulnerabilityMets.ByProduct}};

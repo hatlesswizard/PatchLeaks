@@ -716,112 +716,211 @@ pre {
                 </div>
         {{end}}
 
-        <div class="card shadow">
-            <div class="card-body p-4">
-                {{if .Error}}
-                <div class="alert alert-danger mb-4">
-                    <i class="fas fa-exclamation-triangle me-2"></i> {{.Error}}
-                </div>
-                {{end}}
+        <div class="mb-3 d-flex justify-content-start">
+            <a href="/manage-products" class="btn btn-outline-primary">
+                <i class="fas fa-cogs me-2"></i>Manage Products
+            </a>
+        </div>
 
-                <form method="post" class="mb-4">
-                    <div class="mb-3 d-flex justify-content-start">
-                        <a href="/manage-products" class="btn btn-outline-primary">
-                            <i class="fas fa-cogs me-2"></i>Manage Products
-                        </a>
-                    </div>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Select Product</label>
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="fas fa-cube text-primary"></i>
-                                </span>
-                                <select class="form-select" name="product" id="productSelect">
-                                    <option value="" {{if not .Product}}selected{{end}}>None</option>
-                                    <option value="magento" {{if eq .Product "magento"}}selected{{end}}>Magento</option>
-                                    {{range .Products}}
-                                        {{if ne . "magento"}}
-                                        <option value="{{.}}">{{.}}</option>
-                                        {{end}}
-                                    {{end}}
-                                </select>
-                            </div>
+        <div class="row g-4">
+            <div class="col-xl-6">
+                <div class="card shadow h-100">
+                    <div class="card-body p-4">
+                        {{if .Error}}
+                        <div class="alert alert-danger mb-4">
+                            <i class="fas fa-exclamation-triangle me-2"></i> {{.Error}}
                         </div>
-                        
-                        <div class="col-md-3 version-group" style="display: {{if .Product}}block{{else}}none{{end}};">
-                            <label class="form-label">Old Version</label>
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="fas fa-code-branch text-primary"></i>
-                                </span>
-                                <select class="form-select" name="old_version" id="oldVersion">
-                                    
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <div class="col-md-3 version-group" style="display: {{if .Product}}block{{else}}none{{end}};">
-                            <label class="form-label">New Version</label>
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="fas fa-code-branch text-primary"></i>
-                                </span>
-                                <select class="form-select" name="new_version" id="newVersion">
-                                    
-                                </select>
-                            </div>
-                        </div>
+                        {{end}}
+                        <form method="post" class="mb-0" id="singleProductForm">
+                            <input type="hidden" name="form_type" value="single">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Select Product</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-cube text-primary"></i>
+                                        </span>
+                                        <select class="form-select" name="product" id="productSelect">
+                                            <option value="" {{if not .Product}}selected{{end}}>None</option>
+                                            <option value="magento" {{if eq .Product "magento"}}selected{{end}}>Magento</option>
+                                            {{range .Products}}
+                                                {{if ne . "magento"}}
+                                                <option value="{{.}}" {{if eq $.Product .}}selected{{end}}>{{.}}</option>
+                                                {{end}}
+                                            {{end}}
+                                        </select>
+                                    </div>
+                                </div>
 
-                        <div class="col-md-4">
-                            <label class="form-label">File Extension Filter</label>
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="fas fa-filter text-primary"></i>
-                                </span>
-                                <input type="text" name="extension" class="form-control" 
-                                       value="{{.Extension}}" placeholder=".php, .js, etc">
+                                <div class="col-md-3 version-group" style="display: {{if .Product}}block{{else}}none{{end}};">
+                                    <label class="form-label">Old Version</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-code-branch text-primary"></i>
+                                        </span>
+                                        <select class="form-select" name="old_version" id="oldVersion">
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-3 version-group" style="display: {{if .Product}}block{{else}}none{{end}};">
+                                    <label class="form-label">New Version</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-code-branch text-primary"></i>
+                                        </span>
+                                        <select class="form-select" name="new_version" id="newVersion">
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label">File Extension Filter</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-filter text-primary"></i>
+                                        </span>
+                                        <input type="text" name="extension" class="form-control"
+                                               value="{{.Extension}}" placeholder=".php, .js, etc">
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label">CVE IDs (comma-separated)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-bug text-primary"></i>
+                                        </span>
+                                        <input type="text" name="cve_ids" class="form-control"
+                                               value="{{.CVEIDs}}" placeholder="CVE-2021-44855, CVE-2022-1234">
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" name="enable_ai"
+                                               id="enableAI" {{if .EnableAI}}checked{{end}}>
+                                        <label class="form-check-label" for="enableAI">Enable AI Analysis</label>
+                                    </div>
+                                    <label class="form-label">Search Keywords</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-search text-primary"></i>
+                                        </span>
+                                        <input type="text" name="special_keywords" class="form-control"
+                                               value="{{.SpecialKeywords}}"
+                                               placeholder="sanitize, escape_html">
+                                    </div>
+                                </div>
+
+                                <div class="col-12 mt-4">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="fas fa-search me-2"></i>Analyze Versions
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="col-md-4">
-                            <label class="form-label">CVE IDs (comma-separated)</label>
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="fas fa-bug text-primary"></i>
-                                </span>
-                                <input type="text" name="cve_ids" class="form-control" 
-                                       value="{{.CVEIDs}}" placeholder="CVE-2021-44855, CVE-2022-1234">
-                            </div>
-                        </div>
-                        
-                        <div class="col-md-4">
-                            <div class="form-check form-switch mb-3">
-                                <input class="form-check-input" type="checkbox" name="enable_ai" 
-                                       id="enableAI" {{if .EnableAI}}checked{{end}}>
-                                <label class="form-check-label" for="enableAI">Enable AI Analysis</label>
-                            </div>
-                            <label class="form-label">Search Keywords</label>
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="fas fa-search text-primary"></i>
-                                </span>
-                                <input type="text" name="special_keywords" class="form-control" 
-                                       value="{{.SpecialKeywords}}" 
-                                       placeholder="sanitize, escape_html">
-                            </div>
-                        </div>
-                        
-                        <div class="col-12 mt-4">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-search me-2"></i>Analyze Versions
-                            </button>
-                        </div>
-                    </div>
-                </form>
-                        </div>
+                        </form>
                     </div>
                 </div>
+            </div>
+
+            <div class="col-xl-6">
+                <div class="card shadow h-100">
+                    <div class="card-body p-4 d-flex flex-column">
+                        <div class="mb-3">
+                            <h5 class="mb-1 text-white">Bulk Product Analysis</h5>
+                            <p class="text-muted small mb-0">Automatically download the latest releases and queue sequential comparisons.</p>
+                        </div>
+                        <form method="post" id="bulkProductForm" class="mt-auto">
+                            <input type="hidden" name="form_type" value="bulk">
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label">Select Product</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-cubes text-primary"></i>
+                                        </span>
+                                        <select class="form-select" name="product" id="bulkProductSelect">
+                                            <option value="" {{if not .BulkProduct}}selected{{end}}>None</option>
+                                            <option value="magento" {{if eq .BulkProduct "magento"}}selected{{end}}>Magento</option>
+                                            {{range .Products}}
+                                                {{if ne . "magento"}}
+                                                <option value="{{.}}" {{if eq $.BulkProduct .}}selected{{end}}>{{.}}</option>
+                                                {{end}}
+                                            {{end}}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Comparisons to Generate</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-layer-group text-primary"></i>
+                                        </span>
+                                        <input type="number" min="1" step="1" name="count" id="bulkCount"
+                                               class="form-control" value="{{if gt .BulkCount 0}}{{.BulkCount}}{{else}}3{{end}}">
+                                    </div>
+                                    <small class="text-muted">A count of 3 compares release N vs N-1, N-1 vs N-2, and N-2 vs N-3.</small>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">File Extension Filter</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-filter text-primary"></i>
+                                        </span>
+                                        <input type="text" name="extension" class="form-control"
+                                               value="{{.BulkExtension}}" placeholder=".php, .js, etc">
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">CVE IDs (comma-separated)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-bug text-primary"></i>
+                                        </span>
+                                        <input type="text" name="cve_ids" class="form-control"
+                                               value="{{.BulkCVEIDs}}" placeholder="CVE-2021-44855, CVE-2022-1234">
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" name="enable_ai"
+                                               id="bulkEnableAI" {{if eq .BulkEnableAI "on"}}checked{{end}}>
+                                        <label class="form-check-label" for="bulkEnableAI">Enable AI Analysis</label>
+                                    </div>
+                                    <label class="form-label">Search Keywords</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="fas fa-search text-primary"></i>
+                                        </span>
+                                        <input type="text" name="special_keywords" class="form-control"
+                                               value="{{.BulkSpecialKeywords}}" placeholder="sanitize, escape_html">
+                                    </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Upcoming Comparisons Preview</label>
+                                    <div class="p-3 rounded-3" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);">
+                                        <div id="bulkPreviewEmpty" class="text-muted small">Select a product and count to preview comparisons.</div>
+                                        <ul class="list-unstyled mb-0" id="bulkPreviewList"></ul>
+                                    </div>
+                                </div>
+
+                                <div class="col-12 mt-3">
+                                    <button type="submit" class="btn btn-success w-100">
+                                        <i class="fas fa-bolt me-2"></i>Queue Bulk Analysis
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
 
 
     <script src="/static/js/jquery.min.js"></script>
@@ -829,131 +928,202 @@ pre {
 
     <script>
     $(document).ready(function() {
-        
-        const selectedProduct = $('#productSelect').val();
-        if(selectedProduct) {
-            $('.version-group').show();
-            if(selectedProduct === 'magento') {
-                refreshMagentoVersions();
-            } else {
-                $.get(`/get_versions/${selectedProduct}`, function(versions) {
-                    populateVersionDropdowns(versions);
-                });
-            }
-        }
+        const versionCache = {};
+        const pendingLoads = {};
+        const initialOldVersion = {{json .OldVersion}};
+        const initialNewVersion = {{json .NewVersion}};
+        const singleOldVersion = initialOldVersion || "";
+        const singleNewVersion = initialNewVersion || "";
 
-        $('#productSelect').change(function() {
-            const product = $(this).val();
-            console.log('Product selected:', product);
-            if(product === 'magento') {
-                $('.version-group').show();
-                refreshMagentoVersions();
-            } else if(product) {
-                $('.version-group').show();
-                console.log('Fetching versions for:', product);
-                $.get(`/get_versions/${product}`, function(versions) {
-                    console.log('Received versions:', versions);
-                    populateVersionDropdowns(versions);
-                }).fail(function(xhr, status, error) {
-                    console.error('Error fetching versions:', status, error);
-                    alert('Failed to fetch versions. Check console for details.');
-                });
-            } else {
-                $('.version-group').hide();
-            }
-        });
-
-        function populateVersionDropdowns(versions) {
-            console.log('🎉 Populating dropdowns with', versions.length, 'versions (UNLIMITED!)');
-            const oldVersion = "{{.OldVersion}}";
-            const newVersion = "{{.NewVersion}}";
-            
-            if (!Array.isArray(versions) || versions.length === 0) {
-                console.warn('No versions received');
-                $('#oldVersion, #newVersion').html('<option value="">No versions found</option>').prop('disabled', true);
+        function loadVersions(product, onSuccess, onError) {
+            if (!product) {
+                if (typeof onSuccess === 'function') {
+                    onSuccess([]);
+                }
                 return;
             }
-            
-            console.log('📋 First 5 versions:', versions.slice(0, 5));
-            console.log('📋 Last 5 versions:', versions.slice(-5));
-            
-            const options = versions.map(v => `<option value="${v}">${v}</option>`).join('');
-            $('#oldVersion').html(options).prop('disabled', false);
-            $('#newVersion').html(options).prop('disabled', false);
-            
-            console.log('✅ Dropdowns populated successfully with', versions.length, 'versions!');
-        }
-
-        function refreshMagentoVersions() {
-            console.log('Fetching Magento versions...');
-            fetch('/get_versions/magento')
+            if (versionCache[product]) {
+                if (typeof onSuccess === 'function') {
+                    onSuccess(versionCache[product]);
+                }
+                return;
+            }
+            if (!pendingLoads[product]) {
+                pendingLoads[product] = [];
+            }
+            pendingLoads[product].push({onSuccess, onError});
+            if (pendingLoads[product].length > 1) {
+                return;
+            }
+            fetch(`/get_versions/${product}`)
                 .then(response => {
-                    console.log('Response status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
                     return response.json();
                 })
                 .then(versions => {
-                    console.log('Magento versions received:', versions);
-                    populateVersionDropdowns(versions);
+                    if (!Array.isArray(versions)) {
+                        versions = [];
+                    }
+                    versionCache[product] = versions;
+                    (pendingLoads[product] || []).forEach(handler => {
+                        if (typeof handler.onSuccess === 'function') {
+                            handler.onSuccess(versions);
+                        }
+                    });
+                    delete pendingLoads[product];
                 })
                 .catch(error => {
-                    console.error('Error fetching Magento versions:', error);
-                    alert('Failed to fetch Magento versions. Check console.');
-                });
-        }
-
-        
-        const filterBtns = document.querySelectorAll('.filter-btn');
-        const aiSearchInput = document.getElementById('aiSearch');
-        
-        if (filterBtns.length > 0) {
-            filterBtns.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    const filter = this.dataset.filter;
-                    const search = aiSearchInput ? aiSearchInput.value.toLowerCase() : '';
-                    
-                    document.querySelectorAll('[data-vuln-status]').forEach(card => {
-                        const vulnStatus = card.dataset.vulnStatus;
-                        const cveMatch = card.dataset.cveMatch;
-                        const aiResponse = card.dataset.aiResponse || '';
-                        
-                        let show = false;
-                        if(filter === 'all') {
-                            show = search === '' || aiResponse.includes(search);
-                        } 
-                        else if(filter === 'cve') {
-                            show = cveMatch === 'yes' && 
-                            (search === '' || aiResponse.includes(search));
+                    console.error('Error fetching versions:', error);
+                    (pendingLoads[product] || []).forEach(handler => {
+                        if (typeof handler.onError === 'function') {
+                            handler.onError(error);
                         }
-                        else if(filter === 'vuln') {
-                            show = vulnStatus === 'yes' && 
-                                  (search === '' || aiResponse.includes(search));
-                        }
-                        
-                        card.style.display = show ? 'block' : 'none';
                     });
+                    delete pendingLoads[product];
                 });
-            });
         }
 
-        if (aiSearchInput) {
-            aiSearchInput.addEventListener('input', () => {
-                const activeBtn = document.querySelector('.filter-btn.active');
-                if (activeBtn) {
-                    activeBtn.click();
-                }
-            });
+        function populateVersionDropdowns(product, versions) {
+            const oldSelect = $('#oldVersion');
+            const newSelect = $('#newVersion');
+            if (!Array.isArray(versions) || versions.length === 0) {
+                oldSelect.html('<option value="">No versions found</option>').prop('disabled', true);
+                newSelect.html('<option value="">No versions found</option>').prop('disabled', true);
+                return;
+            }
+            const options = versions.map(v => `<option value="${v}">${v}</option>`).join('');
+            oldSelect.html(options).prop('disabled', false);
+            newSelect.html(options).prop('disabled', false);
+
+            if (singleNewVersion && versions.includes(singleNewVersion)) {
+                newSelect.val(singleNewVersion);
+            }
+            if (singleOldVersion && versions.includes(singleOldVersion)) {
+                oldSelect.val(singleOldVersion);
+            }
+
+            if (!newSelect.val()) {
+                newSelect.val(versions[0]);
+            }
+            if (!oldSelect.val()) {
+                const fallbackIndex = Math.min(1, versions.length - 1);
+                oldSelect.val(versions[fallbackIndex]);
+            }
         }
 
-        window.addEventListener('scroll', () => {
-            const navbar = document.querySelector('.navbar');
-            if (window.scrollY > 50) {
-                navbar.classList.add('scrolled');
+        function updateBulkPreview() {
+            const product = $('#bulkProductSelect').val();
+            const count = parseInt($('#bulkCount').val(), 10);
+            const previewList = $('#bulkPreviewList');
+            const previewEmpty = $('#bulkPreviewEmpty');
+
+            previewList.empty();
+            previewEmpty.removeClass('text-warning text-danger').addClass('text-muted');
+
+            if (!product) {
+                previewEmpty.text('Select a product and count to preview comparisons.');
+                return;
+            }
+            if (!versionCache[product]) {
+                previewEmpty.text('Loading latest releases...');
+                loadVersions(product, function() {
+                    updateBulkPreview();
+                }, function() {
+                    previewEmpty.removeClass('text-muted').addClass('text-danger').text('Failed to load releases for this product.');
+                });
+                return;
+            }
+            if (!count || count < 1) {
+                previewEmpty.text('Enter how many comparisons you want to queue.');
+                return;
+            }
+            const versions = versionCache[product];
+            if (versions.length < count + 1) {
+                previewEmpty.removeClass('text-muted').addClass('text-warning')
+                    .text(`Only ${versions.length} releases found. Need at least ${count + 1} to run ${count} comparisons.`);
+                return;
+            }
+
+            previewEmpty.text('');
+            for (let i = 0; i < count; i++) {
+                const newer = versions[i];
+                const older = versions[i + 1];
+                const item = $('<li class="d-flex align-items-center mb-1 text-white-50"></li>');
+                $('<i class="fas fa-code-branch me-2 text-primary"></i>').appendTo(item);
+                $('<span class="text-white"></span>').text(`${newer} \u2192 ${older}`).appendTo(item);
+                item.appendTo(previewList);
+            }
+        }
+
+        function handleSingleProductChange(product) {
+            if (product) {
+                $('.version-group').show();
+                loadVersions(product, function(versions) {
+                    populateVersionDropdowns(product, versions);
+                    updateBulkPreview();
+                }, function() {
+                    $('#oldVersion, #newVersion').html('<option value="">Unable to load versions</option>').prop('disabled', true);
+                });
             } else {
-                navbar.classList.remove('scrolled');
+                $('.version-group').hide();
+                $('#oldVersion, #newVersion').html('').prop('disabled', true);
+            }
+        }
+
+        const initialSingleProduct = $('#productSelect').val();
+        if (initialSingleProduct) {
+            handleSingleProductChange(initialSingleProduct);
+        }
+
+        const initialBulkProduct = $('#bulkProductSelect').val();
+        if (initialBulkProduct && initialBulkProduct !== initialSingleProduct) {
+            loadVersions(initialBulkProduct, function() {
+                updateBulkPreview();
+            });
+        }
+
+        $('#productSelect').on('change', function() {
+            handleSingleProductChange($(this).val());
+        });
+
+        $('#bulkProductSelect').on('change', function() {
+            const product = $(this).val();
+            if (product) {
+                loadVersions(product, function() {
+                    updateBulkPreview();
+                }, function() {
+                    $('#bulkPreviewEmpty').removeClass('text-muted').addClass('text-danger').text('Failed to load releases for this product.');
+                });
+            } else {
+                updateBulkPreview();
             }
         });
+
+        $('#bulkCount').on('input', function() {
+            updateBulkPreview();
+        });
+
+        $('#bulkProductForm').on('submit', function(e) {
+            const product = $('#bulkProductSelect').val();
+            const count = parseInt($('#bulkCount').val(), 10);
+            if (!product || !count || count < 1) {
+                e.preventDefault();
+                updateBulkPreview();
+                alert('Please select a product and enter a comparison count of at least 1.');
+                return;
+            }
+            const versions = versionCache[product];
+            if (!versions || versions.length < count + 1) {
+                e.preventDefault();
+                updateBulkPreview();
+                alert('Not enough releases are available for that bulk request yet.');
+                return;
+            }
+        });
+
+        updateBulkPreview();
     });
 
     function saveAnalysis() {
