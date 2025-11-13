@@ -1107,17 +1107,6 @@ func phpRightMostIdentifier(node *sitter.Node, src []byte) string {
 	}
 	return ""
 }
-func detectRepoRootPHP(filePath string) string {
-	dir := filepath.Dir(filePath)
-	for i := 0; i < 8; i++ {
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return ""
-}
 func scanPHPDefinitionInRepo(repoRoot string, name string) (signature string, body string, found bool) {
 	var sig string
 	var bd string
@@ -1206,8 +1195,8 @@ func TSListCalledFunctionsPHPMethod(filePath string, methodName string) (names [
 			}
 		}
 		
-		if root := detectRepoRootPHP(filePath); root != "" {
-			if s, b, ok := scanPHPDefinitionInRepo(root, n); ok {
+		if dir := filepath.Dir(filePath); dir != "" {
+			if s, b, ok := scanPHPDefinitionInRepo(dir, n); ok {
 				resultBodies[n] = s + "\n{\n" + b + "\n}"
 			}
 		}
