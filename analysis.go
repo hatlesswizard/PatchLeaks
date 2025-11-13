@@ -1,4 +1,5 @@
 package main
+
 import (
 	"archive/zip"
 	"crypto/sha256"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 )
+
 func runAnalysisBackground(analysisID string, params map[string]interface{}, mode string) {
 	analysisPath := filepath.Join("saved_analyses", analysisID+".json")
 	defer func() {
@@ -23,6 +25,8 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 	switch mode {
 	case "products":
 		analyzedResults = runProductsAnalysis(params)
+	case "products_bulk":
+		analyzedResults = runBulkProductsAnalysis(params)
 	case "folder":
 		analyzedResults = runFolderAnalysis(params)
 	case "cve":
@@ -47,6 +51,8 @@ func runAnalysisBackground(analysisID string, params map[string]interface{}, mod
 	analysis.Meta.FinishedAt = &now
 	analysis.Results = analyzedResults
 	analysis.Meta.Params = params
+	analysis.VulnCount = countVulnerabilities(analyzedResults)
+	analysis.VulnerabilityTypes = computeSortedVulnerabilityTypes(analyzedResults)
 	if params["enable_ai"] == "on" && config != nil {
 		analysis.Meta.AIService = config.Service
 		if svcConfig, ok := config.GetServiceConfig(config.Service); ok {
@@ -104,12 +110,113 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 	}
 	return results
 }
+func runBulkProductsAnalysis(params map[string]interface{}) map[string]AnalysisResult {
+	product, _ := params["product"].(string)
+	if product == "" {
+		return make(map[string]AnalysisResult)
+	}
+	extension, _ := params["extension"].(string)
+	enableAIStr, _ := params["enable_ai"].(string)
+	enableAI := enableAIStr == "on"
+	cveIDs, _ := params["cve_ids"].(string)
+	specialKeywords, _ := params["special_keywords"].(string)
+
+	products := loadProducts()
+	productData, exists := products[product]
+	if !exists {
+		return make(map[string]AnalysisResult)
+	}
+
+	type comparison struct {
+		Old string
+		New string
+	}
+	var comparisons []comparison
+	if rawPairs, ok := params["bulk_pairs"]; ok {
+		switch cast := rawPairs.(type) {
+		case []map[string]string:
+			for _, pair := range cast {
+				if pair == nil {
+					continue
+				}
+				oldVersion := strings.TrimSpace(pair["old_version"])
+				newVersion := strings.TrimSpace(pair["new_version"])
+				if oldVersion == "" || newVersion == "" {
+					continue
+				}
+				comparisons = append(comparisons, comparison{Old: oldVersion, New: newVersion})
+			}
+		case []interface{}:
+			for _, entry := range cast {
+				switch pair := entry.(type) {
+				case map[string]interface{}:
+					oldVersion, _ := pair["old_version"].(string)
+					newVersion, _ := pair["new_version"].(string)
+					oldVersion = strings.TrimSpace(oldVersion)
+					newVersion = strings.TrimSpace(newVersion)
+					if oldVersion == "" || newVersion == "" {
+						continue
+					}
+					comparisons = append(comparisons, comparison{Old: oldVersion, New: newVersion})
+				}
+			}
+		}
+	}
+	if len(comparisons) == 0 {
+		return make(map[string]AnalysisResult)
+	}
+
+	results := make(map[string]AnalysisResult)
+	var summary []map[string]interface{}
+
+	for idx, comp := range comparisons {
+		item := map[string]interface{}{
+			"index":       idx + 1,
+			"old_version": comp.Old,
+			"new_version": comp.New,
+			"status":      "pending",
+		}
+		oldPath, err := downloadAndExtractVersion(productData.RepoURL, comp.Old)
+		if err != nil {
+			item["status"] = "error"
+			item["error"] = fmt.Sprintf("failed to download %s: %v", comp.Old, err)
+			summary = append(summary, item)
+			continue
+		}
+		newPath, err := downloadAndExtractVersion(productData.RepoURL, comp.New)
+		if err != nil {
+			item["status"] = "error"
+			item["error"] = fmt.Sprintf("failed to download %s: %v", comp.New, err)
+			summary = append(summary, item)
+			continue
+		}
+
+		diffs := compareDirectories(oldPath, newPath, extension)
+		pairResults := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs, enableAI)
+		if enableAI && len(pairResults) > 0 {
+			pairResults = runAIAnalysisOnResults(pairResults, cveIDs, *aiThreads, newPath)
+		}
+
+		for filename, res := range pairResults {
+			key := fmt.Sprintf("[%s→%s] %s", comp.New, comp.Old, filename)
+			results[key] = res
+		}
+
+		item["status"] = "completed"
+		item["file_count"] = len(pairResults)
+		item["vuln_count"] = countVulnerabilities(pairResults)
+		summary = append(summary, item)
+	}
+
+	params["bulk_summary"] = summary
+	return results
+}
 func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult {
 	os.MkdirAll("cache", 0755)
 	cleanOldCache(30)
 	if _, _, err := getCacheStats(); err == nil {
 	}
-	_ , _ = params["repo_name"].(string)
+	_, _ = params["repo_name"].(string)
 	repoURL, _ := params["repo_url"].(string)
 	oldVersion, _ := params["old_version"].(string)
 	newVersion, _ := params["new_version"].(string)
@@ -591,7 +698,7 @@ func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) [
 	// Use the system diff command instead of difflib
 	cmd := exec.Command("diff", "-u", oldPath, newPath)
 	output, err := cmd.CombinedOutput()
-	
+
 	// diff returns exit code 1 when differences are found, which is expected
 	if err != nil {
 		// Check if it's just because differences were found (exit code 1)
@@ -605,42 +712,45 @@ func generateUnifiedDiff(oldLines, newLines []string, oldPath, newPath string) [
 			return []string{}
 		}
 	}
-	
+
 	// If no output, files are identical
 	if len(output) == 0 {
 		return []string{}
 	}
-	
+
 	// Split output into lines
 	diffStr := string(output)
 	lines := strings.Split(diffStr, "\n")
-	
+
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
-	
+
 	return lines
 }
-func parseAIResponseForVulnerabilities(aiResponse string) string {
+func parseAIResponseForVulnerabilities(aiResponse string) (string, string) {
+	if strings.TrimSpace(aiResponse) == "" {
+		return "AI: No analysis", "unknown"
+	}
 	lines := strings.Split(aiResponse, "\n")
 	vulnCount := 0
+	notSure := false
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(strings.ToLower(line), "vulnerability existed: yes") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if strings.Contains(line, "vulnerability existed: yes") {
 			vulnCount++
+		}
+		if strings.Contains(line, "vulnerability existed: not sure") || strings.Contains(line, "not sure") {
+			notSure = true
 		}
 	}
 	if vulnCount > 0 {
-		return fmt.Sprintf("AI: %d vulnerabilities", vulnCount)
+		return fmt.Sprintf("AI: %d vulnerabilities", vulnCount), "yes"
 	}
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(strings.ToLower(line), "vulnerability existed: not sure") ||
-			strings.Contains(strings.ToLower(line), "not sure") {
-			return "AI: Not Sure"
-		}
+	if notSure {
+		return "AI: Not Sure", "not_sure"
 	}
-	return "AI: No vulnerabilities"
+	return "AI: No vulnerabilities", "no"
 }
 func determineSeverityFromAIResponse(aiResponse string) string {
 	lines := strings.Split(aiResponse, "\n")
@@ -780,14 +890,17 @@ func runAIAnalysisOnResults(results map[string]AnalysisResult, cveIDs string, th
 						}
 					}
 				}
-				item.result.VulnerabilityStatus = parseAIResponseForVulnerabilities(aiResponse)
+				statusText, statusNormalized := parseAIResponseForVulnerabilities(aiResponse)
+				item.result.VulnerabilityStatus = statusText
+				item.result.VulnerabilityStatusNormalized = statusNormalized
 				item.result.VulnSeverity = determineSeverityFromAIResponse(aiResponse)
+				item.result.CWE = extractCWEsFromAIResponse(aiResponse)
 				resultChan <- item
 			}
 		}(i)
 	}
 	go func() {
-	for _, item := range workItems {
+		for _, item := range workItems {
 			workChan <- item
 		}
 		close(workChan)
@@ -1051,20 +1164,10 @@ func processAIAnalysis(results map[string]AnalysisResult, diffs []DiffFile, cveI
 			}
 			result.CVEMatches = cveMatches
 		}
-		vulnStatus := "AI: No vulnerabilities"
-		severity := "no"
-		if strings.Contains(strings.ToLower(aiResponse), "vulnerability existed") {
-			yesCount := strings.Count(strings.ToLower(aiResponse), "yes")
-			if yesCount > 0 {
-				vulnStatus = fmt.Sprintf("AI: %d vulnerabilities", yesCount)
-				severity = "yes"
-			} else if strings.Contains(strings.ToLower(aiResponse), "not sure") {
-				vulnStatus = "AI: Not sure"
-				severity = "not sure"
-			}
-		}
-		result.VulnerabilityStatus = vulnStatus
-		result.VulnSeverity = severity
+		statusText, statusNormalized := parseAIResponseForVulnerabilities(aiResponse)
+		result.VulnerabilityStatus = statusText
+		result.VulnerabilityStatusNormalized = statusNormalized
+		result.VulnSeverity = determineSeverityFromAIResponse(aiResponse)
 		results[diff.Filename] = result
 	}
 	return results
