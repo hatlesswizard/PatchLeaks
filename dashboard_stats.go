@@ -1,6 +1,7 @@
 package main
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,11 +78,13 @@ type CacheMetricsStats struct {
 type TrendMetrics struct {
 	AnalysesPerDay       map[string]int     `json:"analyses_per_day"`
 	AvgTimeByType        map[string]float64 `json:"avg_time_by_type"`
-	HistoricalVulnTrends []VulnTrendPoint   `json:"historical_vuln_trends"`
+	DailyVulnTrends      []VulnTrendPoint   `json:"daily_vuln_trends"`
+	WeeklyVulnTrends     []VulnTrendPoint   `json:"weekly_vuln_trends"`
+	MonthlyVulnTrends    []VulnTrendPoint   `json:"monthly_vuln_trends"`
 }
 type VulnTrendPoint struct {
-	Month string `json:"month"`
-	Count int    `json:"count"`
+	Period string `json:"period"`
+	Count  int    `json:"count"`
 }
 type ProductMetrics struct {
 	TotalConfigured int               `json:"total_configured"`
@@ -517,7 +520,7 @@ func calculateRepositoryMetrics(analyses []Analysis) RepositoryMetrics {
 		if analysis.Meta.Status != "completed" {
 			continue
 		}
-		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" {
+		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" || analysis.Meta.Source == "cve_auto" {
 			if repoName, ok := analysis.Meta.Params["repo_name"].(string); ok {
 				repoActivity[repoName]++
 			} else if repoURL, ok := analysis.Meta.Params["repo_url"].(string); ok {
@@ -570,11 +573,15 @@ func calculateCacheMetrics() CacheMetricsStats {
 }
 func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 	metrics := TrendMetrics{
-		AnalysesPerDay:       make(map[string]int),
-		AvgTimeByType:        make(map[string]float64),
-		HistoricalVulnTrends: []VulnTrendPoint{},
+		AnalysesPerDay:    make(map[string]int),
+		AvgTimeByType:     make(map[string]float64),
+		DailyVulnTrends:   []VulnTrendPoint{},
+		WeeklyVulnTrends:  []VulnTrendPoint{},
+		MonthlyVulnTrends: []VulnTrendPoint{},
 	}
 	timingByType := make(map[string][]float64)
+	vulnsByDay := make(map[string]int)
+	vulnsByWeek := make(map[string]int)
 	vulnsByMonth := make(map[string]int)
 	for _, analysis := range analyses {
 		if analysis.Meta.Status != "completed" {
@@ -591,9 +598,21 @@ func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 			}
 			timingByType[sourceType] = append(timingByType[sourceType], duration)
 		}
-		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" {
-			monthKey := analysis.Meta.CreatedAt.Format("2006-01")
+		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" || analysis.Meta.Source == "cve_auto" {
+			createdAt := analysis.Meta.CreatedAt
 			vulnCount := countVulnerabilities(analysis.Results)
+			
+			// Daily: format as YYYY-MM-DD
+			dailyKey := createdAt.Format("2006-01-02")
+			vulnsByDay[dailyKey] += vulnCount
+			
+			// Weekly: format as YYYY-W## (ISO week)
+			year, weekNum := createdAt.ISOWeek()
+			weeklyKey := fmt.Sprintf("%d-W%02d", year, weekNum)
+			vulnsByWeek[weeklyKey] += vulnCount
+			
+			// Monthly: format as YYYY-MM
+			monthKey := createdAt.Format("2006-01")
 			vulnsByMonth[monthKey] += vulnCount
 		}
 	}
@@ -606,15 +625,40 @@ func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 			metrics.AvgTimeByType[sourceType] = sum / float64(len(times))
 		}
 	}
-	for month, count := range vulnsByMonth {
-		metrics.HistoricalVulnTrends = append(metrics.HistoricalVulnTrends, VulnTrendPoint{
-			Month: month,
-			Count: count,
+	
+	// Convert daily trends
+	for day, count := range vulnsByDay {
+		metrics.DailyVulnTrends = append(metrics.DailyVulnTrends, VulnTrendPoint{
+			Period: day,
+			Count:  count,
 		})
 	}
-	sort.Slice(metrics.HistoricalVulnTrends, func(i, j int) bool {
-		return metrics.HistoricalVulnTrends[i].Month < metrics.HistoricalVulnTrends[j].Month
+	sort.Slice(metrics.DailyVulnTrends, func(i, j int) bool {
+		return metrics.DailyVulnTrends[i].Period < metrics.DailyVulnTrends[j].Period
 	})
+	
+	// Convert weekly trends
+	for week, count := range vulnsByWeek {
+		metrics.WeeklyVulnTrends = append(metrics.WeeklyVulnTrends, VulnTrendPoint{
+			Period: week,
+			Count:  count,
+		})
+	}
+	sort.Slice(metrics.WeeklyVulnTrends, func(i, j int) bool {
+		return metrics.WeeklyVulnTrends[i].Period < metrics.WeeklyVulnTrends[j].Period
+	})
+	
+	// Convert monthly trends
+	for month, count := range vulnsByMonth {
+		metrics.MonthlyVulnTrends = append(metrics.MonthlyVulnTrends, VulnTrendPoint{
+			Period: month,
+			Count:  count,
+		})
+	}
+	sort.Slice(metrics.MonthlyVulnTrends, func(i, j int) bool {
+		return metrics.MonthlyVulnTrends[i].Period < metrics.MonthlyVulnTrends[j].Period
+	})
+	
 	return metrics
 }
 func calculateProductMetrics(analyses []Analysis) ProductMetrics {
@@ -673,7 +717,7 @@ func calculateLanguageStats(analyses []Analysis) LanguageStats {
 			continue
 		}
 		sourceType := analysis.Meta.Source
-		if sourceType == "library_auto" {
+		if sourceType == "library_auto" || sourceType == "cve_auto" {
 			sourceType = "library"
 		}
 		category := ""
