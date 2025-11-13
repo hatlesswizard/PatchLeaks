@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 )
@@ -84,9 +83,9 @@ func ExtractFunctionContext(filePath, diffContent string, includeContext bool, r
 	}
 	resultChan := make(chan lookupResult, len(tasks))
 	taskChan := make(chan lookupTask, len(tasks))
-	numWorkers := runtime.GOMAXPROCS(0)
-	if numWorkers > 10000 {
-		numWorkers = 4
+	numWorkers := *aiThreads
+	if numWorkers < 1 {
+		numWorkers = 1
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
