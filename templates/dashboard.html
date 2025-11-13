@@ -242,6 +242,36 @@
             font-size: 1.1rem;
         }
 
+        .trend-tabs {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .trend-tab {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.7);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .trend-tab:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .trend-tab.active {
+            background: linear-gradient(135deg, var(--primary-blue), var(--accent-color));
+            border-color: var(--primary-blue);
+            color: white;
+            box-shadow: 0 4px 12px rgba(65, 105, 225, 0.3);
+        }
+
         .stat-item {
             background: linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
             padding: 1.25rem;
@@ -1049,9 +1079,20 @@
             <div class="col-lg-12">
                 <div class="chart-card">
                     <div class="chart-header">
-                        <h3 class="chart-title">Library Vulnerability Trends (Monthly)</h3>
+                        <h3 class="chart-title">Library Vulnerability Trends</h3>
+                        <div class="trend-tabs">
+                            <button class="trend-tab active" data-period="monthly">Monthly</button>
+                            <button class="trend-tab" data-period="weekly">Weekly</button>
+                            <button class="trend-tab" data-period="daily">Daily</button>
+                        </div>
                     </div>
-                    <div style="position: relative; height: 300px;">
+                    <div id="vulnTrendsEmpty" class="empty-state" style="display: none; position: relative; height: 300px; align-items: center; justify-content: center;">
+                        <div class="empty-state-content" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+                            <i class="fas fa-chart-line" style="font-size: 3rem; color: rgba(255,255,255,0.3); margin-bottom: 1rem;"></i>
+                            <p style="color: rgba(255,255,255,0.5); font-size: 1.1rem;">No vulnerability data available for the selected period</p>
+                        </div>
+                    </div>
+                    <div id="vulnTrendsContainer" style="position: relative; height: 300px;">
                         <canvas id="vulnTrendsChart"></canvas>
                     </div>
                 </div>
@@ -1162,50 +1203,134 @@
         });
 
         
-        const vulnTrendsRaw = {{json .Stats.TrendMetrics.HistoricalVulnTrends}};
-        const vulnTrends = typeof vulnTrendsRaw === 'string' ? JSON.parse(vulnTrendsRaw) : vulnTrendsRaw;
-        if (vulnTrends && vulnTrends.length > 0) {
-            const months = vulnTrends.map(t => t.month);
-            const vulnCounts = vulnTrends.map(t => t.count);
+        // Parse all three trend datasets
+        const dailyTrendsRaw = {{json .Stats.TrendMetrics.DailyVulnTrends}};
+        const weeklyTrendsRaw = {{json .Stats.TrendMetrics.WeeklyVulnTrends}};
+        const monthlyTrendsRaw = {{json .Stats.TrendMetrics.MonthlyVulnTrends}};
+        
+        const dailyTrends = typeof dailyTrendsRaw === 'string' ? JSON.parse(dailyTrendsRaw) : dailyTrendsRaw;
+        const weeklyTrends = typeof weeklyTrendsRaw === 'string' ? JSON.parse(weeklyTrendsRaw) : weeklyTrendsRaw;
+        const monthlyTrends = typeof monthlyTrendsRaw === 'string' ? JSON.parse(monthlyTrendsRaw) : monthlyTrendsRaw;
 
-            new Chart(document.getElementById('vulnTrendsChart'), {
-                type: 'line',
-                data: {
-                    labels: months,
-                    datasets: [{
-                        label: 'Vulnerabilities Found',
-                        data: vulnCounts,
-                        borderColor: 'rgba(231, 76, 60, 1)',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.05)'
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            }
-                        }
-                    }
+        let vulnTrendsChart = null;
+        let currentPeriod = 'monthly';
+
+        // Format labels based on period type
+        function formatLabels(period, data) {
+            if (!data || data.length === 0) return [];
+            
+            return data.map(t => {
+                if (period === 'daily') {
+                    // Format as MM/DD/YYYY or keep as YYYY-MM-DD
+                    const date = new Date(t.period + 'T00:00:00');
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                } else if (period === 'weekly') {
+                    // Format as "Week of MM/DD" or keep as YYYY-W##
+                    return t.period;
+                } else {
+                    // Format monthly as "MMM YYYY"
+                    const date = new Date(t.period + '-01T00:00:00');
+                    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
                 }
             });
         }
+
+        // Update chart with selected period
+        function updateChart(period) {
+            const emptyState = document.getElementById('vulnTrendsEmpty');
+            const chartContainer = document.getElementById('vulnTrendsContainer');
+            let data = [];
+            
+            if (period === 'daily') {
+                data = dailyTrends || [];
+            } else if (period === 'weekly') {
+                data = weeklyTrends || [];
+            } else {
+                data = monthlyTrends || [];
+            }
+
+            if (!data || data.length === 0) {
+                // Show empty state
+                emptyState.style.display = 'flex';
+                chartContainer.style.display = 'none';
+                if (vulnTrendsChart) {
+                    vulnTrendsChart.destroy();
+                    vulnTrendsChart = null;
+                }
+                return;
+            }
+
+            // Hide empty state and show chart
+            emptyState.style.display = 'none';
+            chartContainer.style.display = 'block';
+
+            const labels = formatLabels(period, data);
+            const counts = data.map(t => t.count);
+
+            if (vulnTrendsChart) {
+                // Update existing chart
+                vulnTrendsChart.data.labels = labels;
+                vulnTrendsChart.data.datasets[0].data = counts;
+                vulnTrendsChart.update();
+            } else {
+                // Create new chart
+                vulnTrendsChart = new Chart(document.getElementById('vulnTrendsChart'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Vulnerabilities Found',
+                            data: counts,
+                            borderColor: 'rgba(231, 76, 60, 1)',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Tab click handlers
+        document.querySelectorAll('.trend-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const period = this.getAttribute('data-period');
+                
+                // Update active tab
+                document.querySelectorAll('.trend-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                
+                // Update chart
+                currentPeriod = period;
+                updateChart(period);
+            });
+        });
+
+        // Initialize with monthly view
+        updateChart('monthly');
 
         
         setInterval(() => {
