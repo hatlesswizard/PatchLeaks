@@ -1,4 +1,5 @@
 package main
+
 import (
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 )
+
 type DashboardStats struct {
 	Timestamp         time.Time            `json:"timestamp"`
 	AnalysisMetrics   AnalysisMetrics      `json:"analysis_metrics"`
@@ -76,11 +78,11 @@ type CacheMetricsStats struct {
 	DiskSpaceSaved  int64   `json:"disk_space_saved_bytes"`
 }
 type TrendMetrics struct {
-	AnalysesPerDay       map[string]int     `json:"analyses_per_day"`
-	AvgTimeByType        map[string]float64 `json:"avg_time_by_type"`
-	DailyVulnTrends      []VulnTrendPoint   `json:"daily_vuln_trends"`
-	WeeklyVulnTrends     []VulnTrendPoint   `json:"weekly_vuln_trends"`
-	MonthlyVulnTrends    []VulnTrendPoint   `json:"monthly_vuln_trends"`
+	AnalysesPerDay    map[string]int     `json:"analyses_per_day"`
+	AvgTimeByType     map[string]float64 `json:"avg_time_by_type"`
+	DailyVulnTrends   []VulnTrendPoint   `json:"daily_vuln_trends"`
+	WeeklyVulnTrends  []VulnTrendPoint   `json:"weekly_vuln_trends"`
+	MonthlyVulnTrends []VulnTrendPoint   `json:"monthly_vuln_trends"`
 }
 type VulnTrendPoint struct {
 	Period string `json:"period"`
@@ -108,12 +110,14 @@ type LanguageStat struct {
 	Language  string `json:"language"`
 	FileCount int    `json:"file_count"`
 }
+
 var (
-	dashboardCache      *DashboardStats
-	dashboardCacheMutex sync.RWMutex
-	dashboardCacheTime  time.Time
-	dashboardCacheTTL   = 30 * time.Second
-	cwePatternRegex = regexp.MustCompile(`CWE-(\d+)\s*(?::|-)\s*([^\n\[]+?)(?:\s+-\s+(?:CWE-\d+|\S+\.\S+|\S+/\S+)|\s+\[|\n|$)`)
+	dashboardCache         *DashboardStats
+	dashboardCacheMutex    sync.RWMutex
+	dashboardCacheTime     time.Time
+	dashboardCacheTTL      = 30 * time.Second
+	cwePatternRegex        = regexp.MustCompile(`CWE-(\d+)\s*(?::|-)\s*([^\n\[]+?)(?:\s+-\s+(?:CWE-\d+|\S+\.\S+|\S+/\S+)|\s+\[|\n|$)`)
+	cweIDOnlyRegex         = regexp.MustCompile(`CWE-(\d+)`)
 	isRefreshing           bool
 	isRefreshingLock       sync.Mutex
 	processedAnalyses      = make(map[string]time.Time)
@@ -147,6 +151,7 @@ var (
 		".dart":  "Dart",
 	}
 )
+
 func GetDashboardStats() (*DashboardStats, error) {
 	dashboardCacheMutex.RLock()
 	cacheExists := dashboardCache != nil
@@ -341,9 +346,10 @@ func calculateVulnerabilityMetrics(analyses []Analysis) VulnerabilityMetrics {
 			}
 			vulnCount := countVulnerabilities(analysis.Results)
 			var cwes []string
+			// Use the CWE field directly from results
 			for _, result := range analysis.Results {
-				if result.AIResponse != "" {
-					cwes = append(cwes, extractCWEsFromAIResponse(result.AIResponse)...)
+				if len(result.CWE) > 0 {
+					cwes = append(cwes, result.CWE...)
 				}
 			}
 			resultsChan <- struct {
@@ -386,33 +392,67 @@ func extractCWEsFromAIResponse(aiResponse string) []string {
 	found := make(map[string]bool)
 	matches := cwePatternRegex.FindAllStringSubmatch(aiResponse, -1)
 	for _, match := range matches {
-		if len(match) >= 3 {
-			cweNumber := match[1]
-			description := strings.TrimSpace(match[2])
-			repeatPattern := " - CWE-" + cweNumber
-			if strings.HasSuffix(description, repeatPattern) {
-				description = strings.TrimSpace(strings.TrimSuffix(description, repeatPattern))
-			}
-			parts := strings.Split(description, " - ")
-			if len(parts) > 1 {
-				lastPart := parts[len(parts)-1]
-				if len(lastPart) < 30 && !strings.ContainsAny(lastPart, "()'/") {
-					if !strings.Contains(lastPart, " ") || strings.HasPrefix(lastPart, "apps/") || strings.HasPrefix(lastPart, "packages/") {
-						description = strings.TrimSpace(strings.Join(parts[:len(parts)-1], " - "))
-					}
-				}
-			}
-			if len(description) < 3 {
-				continue
-			}
-			cweEntry := "CWE-" + cweNumber + ": " + description
-			if !found[cweEntry] {
-				cwes = append(cwes, cweEntry)
-				found[cweEntry] = true
+		if len(match) < 2 {
+			continue
+		}
+		rawID := match[1]
+		normID := normalizeCWEID(rawID)
+		if normID == "" {
+			continue
+		}
+		if found[normID] {
+			continue
+		}
+		name, ok := GetCWEName(normID)
+		if !ok && len(match) >= 3 {
+			name = sanitizeCWEDescription(match[2], rawID)
+		}
+		entry := "CWE-" + normID
+		if name != "" {
+			entry += ": " + name
+		}
+		cwes = append(cwes, entry)
+		found[normID] = true
+	}
+	simpleMatches := cweIDOnlyRegex.FindAllStringSubmatch(aiResponse, -1)
+	for _, match := range simpleMatches {
+		if len(match) < 2 {
+			continue
+		}
+		normID := normalizeCWEID(match[1])
+		if normID == "" || found[normID] {
+			continue
+		}
+		name, ok := GetCWEName(normID)
+		if !ok || name == "" {
+			continue
+		}
+		entry := fmt.Sprintf("CWE-%s: %s", normID, name)
+		cwes = append(cwes, entry)
+		found[normID] = true
+	}
+	return cwes
+}
+
+func sanitizeCWEDescription(raw, id string) string {
+	description := strings.TrimSpace(raw)
+	if description == "" {
+		return ""
+	}
+	repeatPattern := " - CWE-" + id
+	if strings.HasSuffix(description, repeatPattern) {
+		description = strings.TrimSpace(strings.TrimSuffix(description, repeatPattern))
+	}
+	parts := strings.Split(description, " - ")
+	if len(parts) > 1 {
+		lastPart := parts[len(parts)-1]
+		if len(lastPart) < 30 && !strings.ContainsAny(lastPart, "()'/") {
+			if !strings.Contains(lastPart, " ") || strings.HasPrefix(lastPart, "apps/") || strings.HasPrefix(lastPart, "packages/") {
+				description = strings.TrimSpace(strings.Join(parts[:len(parts)-1], " - "))
 			}
 		}
 	}
-	return cwes
+	return description
 }
 func calculateCVEMetrics(analyses []Analysis) CVEMetrics {
 	metrics := CVEMetrics{}
@@ -466,7 +506,7 @@ func calculateAIMetrics(analyses []Analysis) AIMetrics {
 		if analysis.Meta.FinishedAt != nil {
 			duration := analysis.Meta.FinishedAt.Sub(analysis.Meta.CreatedAt).Seconds()
 			if duration > 0 {
-				
+
 				if fileCount <= 10 {
 					timeBuckets["10_files"] = append(timeBuckets["10_files"], duration)
 				} else if fileCount <= 100 {
@@ -601,16 +641,16 @@ func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 		if analysis.Meta.Source == "library" || analysis.Meta.Source == "library_auto" || analysis.Meta.Source == "cve_auto" {
 			createdAt := analysis.Meta.CreatedAt
 			vulnCount := countVulnerabilities(analysis.Results)
-			
+
 			// Daily: format as YYYY-MM-DD
 			dailyKey := createdAt.Format("2006-01-02")
 			vulnsByDay[dailyKey] += vulnCount
-			
+
 			// Weekly: format as YYYY-W## (ISO week)
 			year, weekNum := createdAt.ISOWeek()
 			weeklyKey := fmt.Sprintf("%d-W%02d", year, weekNum)
 			vulnsByWeek[weeklyKey] += vulnCount
-			
+
 			// Monthly: format as YYYY-MM
 			monthKey := createdAt.Format("2006-01")
 			vulnsByMonth[monthKey] += vulnCount
@@ -625,7 +665,7 @@ func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 			metrics.AvgTimeByType[sourceType] = sum / float64(len(times))
 		}
 	}
-	
+
 	// Convert daily trends
 	for day, count := range vulnsByDay {
 		metrics.DailyVulnTrends = append(metrics.DailyVulnTrends, VulnTrendPoint{
@@ -636,7 +676,7 @@ func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 	sort.Slice(metrics.DailyVulnTrends, func(i, j int) bool {
 		return metrics.DailyVulnTrends[i].Period < metrics.DailyVulnTrends[j].Period
 	})
-	
+
 	// Convert weekly trends
 	for week, count := range vulnsByWeek {
 		metrics.WeeklyVulnTrends = append(metrics.WeeklyVulnTrends, VulnTrendPoint{
@@ -647,7 +687,7 @@ func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 	sort.Slice(metrics.WeeklyVulnTrends, func(i, j int) bool {
 		return metrics.WeeklyVulnTrends[i].Period < metrics.WeeklyVulnTrends[j].Period
 	})
-	
+
 	// Convert monthly trends
 	for month, count := range vulnsByMonth {
 		metrics.MonthlyVulnTrends = append(metrics.MonthlyVulnTrends, VulnTrendPoint{
@@ -658,7 +698,7 @@ func calculateTrendMetrics(analyses []Analysis) TrendMetrics {
 	sort.Slice(metrics.MonthlyVulnTrends, func(i, j int) bool {
 		return metrics.MonthlyVulnTrends[i].Period < metrics.MonthlyVulnTrends[j].Period
 	})
-	
+
 	return metrics
 }
 func calculateProductMetrics(analyses []Analysis) ProductMetrics {
