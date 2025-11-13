@@ -246,7 +246,7 @@ func getGitHubVersionsByDate(repoURL string) []string {
 	}
 	jobs := make(chan job, len(tags))
 	results := make(chan tagDateResult, len(tags))
-	workerCount := 6
+	workerCount := *aiThreads
 	if workerCount > len(tags) {
 		workerCount = len(tags)
 	}
@@ -397,16 +397,9 @@ func createNewAnalysisRecord(params map[string]interface{}, source string, aiEna
 func countVulnerabilities(results map[string]AnalysisResult) int {
 	count := 0
 	for _, result := range results {
-		if strings.HasPrefix(result.VulnerabilityStatus, "AI: ") {
-			vulnText := strings.TrimPrefix(result.VulnerabilityStatus, "AI: ")
-			if !strings.HasPrefix(vulnText, "Not sure") && !strings.HasPrefix(vulnText, "No vulnerabilities") {
-				parts := strings.Split(vulnText, " ")
-				if len(parts) > 0 {
-					var num int
-					fmt.Sscanf(parts[0], "%d", &num)
-					count += num
-				}
-			}
+		// Count results that have CWEs identified
+		if len(result.CWE) > 0 {
+			count += len(result.CWE)
 		}
 	}
 	return count
