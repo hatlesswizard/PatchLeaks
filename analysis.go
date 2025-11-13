@@ -98,7 +98,7 @@ func runProductsAnalysis(params map[string]interface{}) map[string]AnalysisResul
 		return make(map[string]AnalysisResult)
 	}
 	diffs := compareDirectories(oldPath, newPath, extension)
-	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
+	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs, enableAI)
 	if enableAI && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newPath)
 	}
@@ -130,7 +130,7 @@ func runLibraryAnalysis(params map[string]interface{}) map[string]AnalysisResult
 		return make(map[string]AnalysisResult)
 	}
 	diffs := compareDirectories(oldPath, newPath, extension)
-	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs)
+	results := analyzeDiffsForVulnerabilities(diffs, specialKeywords, cveIDs, enableAI)
 	if enableAI && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newPath)
 	}
@@ -679,7 +679,7 @@ func parseAICVEResponse(aiResponse string) string {
 	}
 	return "No"
 }
-func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) map[string]AnalysisResult {
+func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string, enableAI bool) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	for _, diff := range diffs {
 		if !validateFilename(diff.Filename) {
@@ -692,7 +692,9 @@ func analyzeDiffsForVulnerabilities(diffs []DiffFile, keywords, cveIDs string) m
 		result := AnalysisResult{
 			Context: contextLines,
 		}
-		result.VulnerabilityStatus = "AI: Analyzing..."
+		if enableAI {
+			result.VulnerabilityStatus = "AI: Analyzing..."
+		}
 		result.VulnSeverity = "unknown"
 		results[diff.Filename] = result
 	}
@@ -848,7 +850,7 @@ func runFolderAnalysis(params map[string]interface{}) map[string]AnalysisResult 
 		keywords = strings.Split(specialKeywords, ",")
 	}
 	diffs := compareFolders(oldFolder, newFolder, extension, keywords)
-	results := analyzeDiffsWithKeywords(diffs, keywords)
+	results := analyzeDiffsWithKeywords(diffs, keywords, enableAI == "on")
 	if enableAI == "on" && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, cveIDs, *aiThreads, newFolder)
 	}
@@ -997,18 +999,21 @@ func shouldIncludeFile(lines []string, keywords []string) bool {
 	}
 	return false
 }
-func analyzeDiffsWithKeywords(diffs []DiffFile, keywords []string) map[string]AnalysisResult {
+func analyzeDiffsWithKeywords(diffs []DiffFile, keywords []string, enableAI bool) map[string]AnalysisResult {
 	results := make(map[string]AnalysisResult)
 	for _, diff := range diffs {
 		contextLines := diff.Diff
 		if len(contextLines) > 1000 {
 			contextLines = contextLines[:1000]
 		}
-		results[diff.Filename] = AnalysisResult{
-			Context:             contextLines,
-			VulnerabilityStatus: "AI: Analyzing...",
-			VulnSeverity:        "unknown",
+		result := AnalysisResult{
+			Context:      contextLines,
+			VulnSeverity: "unknown",
 		}
+		if enableAI {
+			result.VulnerabilityStatus = "AI: Analyzing..."
+		}
+		results[diff.Filename] = result
 	}
 	return results
 }
