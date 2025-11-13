@@ -420,7 +420,7 @@ func RunPatchDiff(test *RealWorldTest) (*AnalysisResult, error) {
 	if _, err := saveDiffArtifacts(test, diffs); err != nil {
 	} else {
 	}
-	results := analyzeDiffsForVulnerabilities(diffs, "", "")
+	results := analyzeDiffsForVulnerabilities(diffs, "", "", config != nil)
 	if config != nil && len(results) > 0 {
 		results = runAIAnalysisOnResults(results, "", *aiThreads, newPath)
 	}
