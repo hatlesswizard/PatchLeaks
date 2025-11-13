@@ -1,18 +1,21 @@
 package main
+
 import (
 	"encoding/json"
 	"time"
 )
+
 type FlashMessage struct {
 	Category string `json:"category"`
 	Message  string `json:"message"`
 }
 type Analysis struct {
-	ID          string                    `json:"id,omitempty"`
-	Meta        AnalysisMeta              `json:"meta"`
-	Results     map[string]AnalysisResult `json:"results"`
-	VulnCount   int                       `json:"vuln_count,omitempty"`
-	CVEWriteups map[string]string         `json:"cve_writeups,omitempty"`
+	ID                 string                    `json:"id,omitempty"`
+	Meta               AnalysisMeta              `json:"meta"`
+	Results            map[string]AnalysisResult `json:"results"`
+	VulnCount          int                       `json:"vuln_count,omitempty"`
+	VulnerabilityTypes []VulnerabilityTypeCount  `json:"vulnerability_types,omitempty"`
+	CVEWriteups        map[string]string         `json:"cve_writeups,omitempty"`
 }
 type AnalysisMeta struct {
 	CreatedAt  time.Time              `json:"created_at"`
@@ -26,11 +29,13 @@ type AnalysisMeta struct {
 	Params     map[string]interface{} `json:"params,omitempty"`
 }
 type AnalysisResult struct {
-	Context             []string            `json:"context"`
-	AIResponse          string              `json:"ai_response,omitempty"`
-	VulnerabilityStatus string              `json:"vulnerability_status,omitempty"`
-	VulnSeverity        string              `json:"vuln_severity,omitempty"`
-	CVEMatches          map[string]CVEMatch `json:"cve_matches,omitempty"`
+	Context                       []string            `json:"context"`
+	AIResponse                    string              `json:"ai_response,omitempty"`
+	VulnerabilityStatus           string              `json:"vulnerability_status,omitempty"`
+	VulnerabilityStatusNormalized string              `json:"vulnerability_status_normalized,omitempty"`
+	VulnSeverity                  string              `json:"vuln_severity,omitempty"`
+	CWE                           []string            `json:"cwe,omitempty"`
+	CVEMatches                    map[string]CVEMatch `json:"cve_matches,omitempty"`
 }
 type CVEMatch struct {
 	Result      string `json:"result"`
@@ -83,6 +88,7 @@ type CVE struct {
 	Published   time.Time `json:"published"`
 	Modified    time.Time `json:"modified"`
 }
+
 func (c *CVE) UnmarshalJSON(data []byte) error {
 	type NVDDescription struct {
 		Lang  string `json:"lang"`
@@ -132,6 +138,7 @@ func parseNVDate(dateStr string) time.Time {
 	}
 	return time.Time{}
 }
+
 type NVDResponse struct {
 	ResultsPerPage  int `json:"resultsPerPage"`
 	StartIndex      int `json:"startIndex"`
